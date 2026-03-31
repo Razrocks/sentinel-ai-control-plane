@@ -1,0 +1,796 @@
+import { useState } from 'react'
+import { useParams, Link } from 'react-router-dom'
+import {
+  ArrowLeft,
+  CheckCircle,
+  XCircle,
+  Clock,
+  ArrowUpRight,
+  Send,
+  MessageSquare,
+  Unlock,
+  AlertTriangle,
+  Shield,
+  UserCheck,
+  Ban,
+  Zap,
+  Info,
+  Lock,
+  KeyRound,
+  Timer,
+  Eye,
+  Database,
+  Globe,
+} from 'lucide-react'
+import { mockAccessRequests } from '@/data/mock'
+import { RiskBadge, ApprovalBadge, PolicyBadge, SystemChip, ActionGuardModal, ContextualAssistant } from '@/components/shared'
+import { formatDate } from '@/lib/utils'
+import { useRole } from '@/lib/roles'
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function getRecommendedNextStep(request: (typeof mockAccessRequests)[number]) {
+  if (request.managerApprovalRequired && request.managerApproval === 'pending') {
+    return {
+      icon: Send,
+      color: 'text-accent',
+      bg: 'bg-accent/10 border-accent/20',
+      label: 'Route to manager',
+      detail: `Manager approval is the next gate — route to ${request.manager}.`,
+    }
+  }
+  if (
+    request.ownerApprovalRequired &&
+    request.ownerApproval === 'pending' &&
+    request.managerApproval === 'approved'
+  ) {
+    return {
+      icon: ArrowUpRight,
+      color: 'text-accent',
+      bg: 'bg-accent/10 border-accent/20',
+      label: 'Route to system owner',
+      detail: `Manager approved — ${request.systemOwner} sign-off needed.`,
+    }
+  }
+  if (request.entitlementCheck === 'ineligible') {
+    return {
+      icon: AlertTriangle,
+      color: 'text-risk-critical',
+      bg: 'bg-risk-critical/10 border-risk-critical/20',
+      label: 'Deny or escalate',
+      detail: 'User is not eligible per entitlement policy.',
+    }
+  }
+  const allClear =
+    (!request.managerApprovalRequired || request.managerApproval === 'approved' || request.managerApproval === 'not_required') &&
+    (!request.ownerApprovalRequired || request.ownerApproval === 'approved' || request.ownerApproval === 'not_required')
+  if (allClear && request.entitlementCheck !== 'ineligible') {
+    return {
+      icon: Unlock,
+      color: 'text-status-approved',
+      bg: 'bg-status-approved/10 border-status-approved/20',
+      label: 'Ready for grant execution',
+      detail: 'All approvals obtained.',
+    }
+  }
+  return {
+    icon: Info,
+    color: 'text-status-pending',
+    bg: 'bg-status-pending/10 border-status-pending/20',
+    label: 'Review and route',
+    detail: 'Assess eligibility and route for approval.',
+  }
+}
+
+type StepStatus = 'completed' | 'active' | 'locked'
+
+function getApprovalSteps(request: (typeof mockAccessRequests)[number]) {
+  const managerStatus: StepStatus =
+    request.managerApproval === 'approved' || request.managerApproval === 'not_required'
+      ? 'completed'
+      : request.managerApproval === 'denied'
+        ? 'active'       // denied is still "current" — show it
+        : 'active'
+
+  const ownerStatus: StepStatus =
+    request.ownerApproval === 'approved' || request.ownerApproval === 'not_required'
+      ? 'completed'
+      : request.ownerApproval === 'denied'
+        ? 'active'
+        : managerStatus === 'completed'
+          ? 'active'
+          : 'locked'
+
+  const allApprovalsClear = managerStatus === 'completed' && ownerStatus === 'completed'
+  const grantStatus: StepStatus =
+    request.status === 'approved' && allApprovalsClear
+      ? 'completed'
+      : allApprovalsClear
+        ? 'active'
+        : 'locked'
+
+  return [
+    {
+      step: 1,
+      label: 'Manager Approval',
+      actor: request.manager,
+      required: request.managerApprovalRequired,
+      approvalState: request.managerApproval,
+      status: managerStatus,
+    },
+    {
+      step: 2,
+      label: 'Owner Approval',
+      actor: request.systemOwner,
+      required: request.ownerApprovalRequired,
+      approvalState: request.ownerApproval,
+      status: ownerStatus,
+    },
+    {
+      step: 3,
+      label: 'Grant Execution',
+      actor: null,
+      required: true,
+      approvalState: null,
+      status: grantStatus,
+    },
+  ] as const
+}
+
+function getWhatHappensNext(request: (typeof mockAccessRequests)[number]) {
+  if (request.status === 'approved') {
+    return {
+      icon: CheckCircle,
+      color: 'text-status-approved',
+      text: `Access will be granted to ${request.requestedSystem} with ${request.requestedRole} permissions. Grant is time-bound to 90 days.`,
+    }
+  }
+  if (request.status === 'denied') {
+    return {
+      icon: XCircle,
+      color: 'text-risk-critical',
+      text: 'Requester will be notified. They can re-request with updated justification.',
+    }
+  }
+  // pending / other
+  const waitingOn: string[] = []
+  if (request.managerApprovalRequired && request.managerApproval === 'pending') waitingOn.push(request.manager)
+  if (request.ownerApprovalRequired && request.ownerApproval === 'pending') waitingOn.push(request.systemOwner)
+  const who = waitingOn.length > 0 ? waitingOn.join(' and ') : 'approvers'
+  return {
+    icon: Clock,
+    color: 'text-status-pending',
+    text: `Waiting on ${who}. Operator can route or escalate.`,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Step timeline component
+// ---------------------------------------------------------------------------
+
+function StepIcon({ status, denied }: { status: StepStatus; denied?: boolean }) {
+  if (denied) return <XCircle className="w-5 h-5 text-risk-critical" />
+  if (status === 'completed') return <CheckCircle className="w-5 h-5 text-status-approved" />
+  if (status === 'active') return <Clock className="w-5 h-5 text-status-pending" />
+  return <Lock className="w-5 h-5 text-text-muted/40" />
+}
+
+function stepLineColor(status: StepStatus) {
+  if (status === 'completed') return 'bg-status-approved/40'
+  return 'bg-border'
+}
+
+// ---------------------------------------------------------------------------
+// Main component
+// ---------------------------------------------------------------------------
+
+export default function AccessRequestDetail() {
+  const { id } = useParams<{ id: string }>()
+  const [guardModal, setGuardModal] = useState<{
+    open: boolean
+    title: string
+    description: string
+    variant: 'danger' | 'warning' | 'info'
+  } | null>(null)
+  const { role, canAction, getBlockedActions, config } = useRole()
+
+  const request = mockAccessRequests.find(r => r.id === id)
+  if (!request) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <p className="text-text-muted">Access request not found</p>
+      </div>
+    )
+  }
+
+  // -- Data --
+  const nextStep = getRecommendedNextStep(request)
+  const steps = getApprovalSteps(request)
+  const whatsNext = getWhatHappensNext(request)
+
+  // -- Actions with availability grouping --
+  const allActions = [
+    {
+      key: 'route_manager',
+      permission: 'route_manager',
+      label: 'Route to Manager',
+      icon: Send,
+      style: 'bg-accent/10 text-accent hover:bg-accent/20',
+      desc: `Send this access request to ${request.manager} for approval.`,
+      variant: 'info' as const,
+      disabled: false,
+    },
+    {
+      key: 'route_owner',
+      permission: 'route_owner',
+      label: 'Route to Owner',
+      icon: ArrowUpRight,
+      style: 'bg-surface-raised text-text-secondary hover:bg-surface-overlay hover:text-text-primary',
+      desc: `Send this access request to ${request.systemOwner} for system owner approval.`,
+      variant: 'info' as const,
+      disabled: false,
+    },
+    {
+      key: 'approve',
+      permission: 'approve',
+      label: 'Approve',
+      icon: CheckCircle,
+      style: 'bg-status-approved/10 text-status-approved hover:bg-status-approved/20',
+      disabled: request.managerApprovalRequired && request.managerApproval !== 'approved',
+      disabledReason: 'Manager approval is required first',
+      desc: 'Approve this access request. The grant will be prepared for execution.',
+      variant: 'warning' as const,
+    },
+    {
+      key: 'deny',
+      permission: 'deny',
+      label: 'Deny',
+      icon: XCircle,
+      style: 'bg-risk-critical/10 text-risk-critical hover:bg-risk-critical/20',
+      disabled: false,
+      desc: 'Deny this access request. The requester will be notified.',
+      variant: 'danger' as const,
+    },
+    {
+      key: 'request_info',
+      permission: 'request_info',
+      label: 'Request More Info',
+      icon: MessageSquare,
+      style: 'bg-surface-raised text-text-secondary hover:bg-surface-overlay hover:text-text-primary',
+      disabled: false,
+      desc: 'Ask the requester for additional information.',
+      variant: 'info' as const,
+    },
+    {
+      key: 'execute_grant',
+      permission: 'execute_grant',
+      label: 'Execute Grant',
+      icon: Unlock,
+      style: 'bg-status-approved/10 text-status-approved hover:bg-status-approved/20',
+      disabled: !request.autoGrantAllowed || request.status !== 'approved',
+      disabledReason: !request.autoGrantAllowed
+        ? 'Auto-grant is not allowed for this request'
+        : 'Request must be approved before grant execution',
+      desc: 'Execute the approved access grant.',
+      variant: 'warning' as const,
+    },
+  ]
+
+  const availableActions = allActions.filter(a => canAction(a.permission) && !a.disabled)
+  const blockedByState = allActions.filter(a => canAction(a.permission) && a.disabled)
+  const blockedByRole = getBlockedActions().filter(b =>
+    allActions.some(a => a.permission === b.action),
+  )
+
+  const NextStepIcon = nextStep.icon
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div className="flex items-start gap-4">
+        <Link
+          to="/access-requests"
+          className="mt-1 p-1 rounded hover:bg-surface-raised transition-colors"
+        >
+          <ArrowLeft className="w-5 h-5 text-text-muted" />
+        </Link>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-3 mb-1">
+            <span className="text-sm text-text-muted font-mono">{request.requestId}</span>
+            <RiskBadge level={request.riskLevel} />
+            <ApprovalBadge
+              state={
+                request.status === 'pending'
+                  ? 'pending'
+                  : request.status === 'approved'
+                    ? 'approved'
+                    : 'denied'
+              }
+            />
+            <PolicyBadge decision={request.policyDecision} />
+          </div>
+          <h1 className="text-xl font-semibold text-text-primary break-words">
+            {request.requester} &rarr; {request.requestedSystem}
+          </h1>
+          <p className="text-sm text-text-secondary mt-1">
+            Requesting {request.requestedRole} access
+          </p>
+        </div>
+      </div>
+
+      {/* 3-column grid */}
+      <div className="grid grid-cols-[280px_1fr_280px] gap-5">
+        {/* ---- LEFT: Request context ---- */}
+        <div>
+          <div className="bg-surface rounded-lg border border-border p-4 space-y-4">
+            <h3 className="text-xs font-medium text-text-muted uppercase tracking-wider">
+              Request Details
+            </h3>
+            <div className="space-y-3">
+              <div>
+                <div className="text-xs text-text-muted">Requester</div>
+                <div className="text-sm text-text-primary">{request.requester}</div>
+                <div className="text-xs text-text-muted">{request.requesterEmail}</div>
+              </div>
+              <div>
+                <div className="text-xs text-text-muted">Requested System</div>
+                <SystemChip name={request.requestedSystem} />
+              </div>
+              <div>
+                <div className="text-xs text-text-muted">Requested Role</div>
+                <div className="text-sm text-text-primary">{request.requestedRole}</div>
+              </div>
+              <div>
+                <div className="text-xs text-text-muted">Justification</div>
+                <div className="text-sm text-text-secondary leading-relaxed">
+                  {request.justification}
+                </div>
+              </div>
+              <div>
+                <div className="text-xs text-text-muted">Manager</div>
+                <div className="text-sm text-text-primary">{request.manager}</div>
+              </div>
+              <div>
+                <div className="text-xs text-text-muted">System Owner</div>
+                <div className="text-sm text-text-primary">{request.systemOwner}</div>
+              </div>
+              <div>
+                <div className="text-xs text-text-muted">Requested</div>
+                <div className="text-sm text-text-secondary">{formatDate(request.createdAt)}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* ---- CENTER: Analysis ---- */}
+        <div className="space-y-4 min-w-0">
+          {/* Recommended Next Step callout */}
+          <div
+            className={`flex items-start gap-3 rounded-lg border p-4 ${nextStep.bg}`}
+          >
+            <Zap className={`w-5 h-5 flex-shrink-0 mt-0.5 ${nextStep.color}`} />
+            <div>
+              <div className={`text-sm font-semibold ${nextStep.color}`}>
+                Recommended Next Step
+              </div>
+              <div className="text-sm text-text-primary font-medium mt-0.5">
+                {nextStep.label}
+              </div>
+              <div className="text-xs text-text-secondary mt-0.5">{nextStep.detail}</div>
+            </div>
+          </div>
+
+          {/* Eligibility & Policy Evaluation */}
+          <div className="bg-surface rounded-lg border border-border p-4 space-y-4">
+            <h3 className="text-sm font-medium text-text-primary">
+              Eligibility &amp; Policy Evaluation
+            </h3>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="bg-surface-raised rounded p-3">
+                <div className="text-xs text-text-muted mb-1">Entitlement Check</div>
+                <div
+                  className={`text-sm font-medium ${
+                    request.entitlementCheck === 'eligible'
+                      ? 'text-status-approved'
+                      : request.entitlementCheck === 'ineligible'
+                        ? 'text-risk-critical'
+                        : 'text-status-pending'
+                  }`}
+                >
+                  {request.entitlementCheck === 'eligible'
+                    ? 'Eligible'
+                    : request.entitlementCheck === 'ineligible'
+                      ? 'Ineligible'
+                      : 'Review Required'}
+                </div>
+              </div>
+              <div className="bg-surface-raised rounded p-3">
+                <div className="text-xs text-text-muted mb-1">Auto-Grant Eligible</div>
+                <div
+                  className={`text-sm font-medium ${
+                    request.autoGrantAllowed ? 'text-status-approved' : 'text-risk-high'
+                  }`}
+                >
+                  {request.autoGrantAllowed ? 'Yes' : 'No'}
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-surface-raised rounded p-4">
+              <div className="text-xs text-text-muted mb-2">Policy Decision Reason</div>
+              <div className="text-sm text-text-primary leading-relaxed">{request.reason}</div>
+            </div>
+
+            {request.entitlementCheck === 'ineligible' && (
+              <div className="flex items-center gap-2 bg-risk-critical/10 border border-risk-critical/20 rounded-lg p-3">
+                <AlertTriangle className="w-4 h-4 text-risk-critical flex-shrink-0" />
+                <span className="text-sm text-risk-critical">
+                  User is not eligible for this access based on entitlement policy
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* Grant Scope — Access Approver / Approver / Admin */}
+          {(role === 'access_approver' || role === 'approver' || role === 'admin') && (
+            <div className="bg-surface rounded-lg border border-accent/20 p-4 space-y-3">
+              <h3 className="text-sm font-medium text-accent flex items-center gap-2">
+                <KeyRound className="w-4 h-4" />
+                Grant Scope
+              </h3>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-surface-raised rounded p-2.5">
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <Database className="w-3 h-3 text-text-muted" />
+                    <span className="text-[10px] text-text-muted uppercase tracking-wider">System</span>
+                  </div>
+                  <div className="text-sm text-text-primary font-mono">{request.requestedSystem}</div>
+                </div>
+                <div className="bg-surface-raised rounded p-2.5">
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <Shield className="w-3 h-3 text-text-muted" />
+                    <span className="text-[10px] text-text-muted uppercase tracking-wider">Role</span>
+                  </div>
+                  <div className="text-sm text-text-primary">{request.requestedRole}</div>
+                </div>
+                <div className="bg-surface-raised rounded p-2.5">
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <Timer className="w-3 h-3 text-text-muted" />
+                    <span className="text-[10px] text-text-muted uppercase tracking-wider">Duration</span>
+                  </div>
+                  <div className="text-sm text-text-primary">
+                    {request.riskLevel === 'high' || request.riskLevel === 'critical' ? '24 hours (time-boxed)' : '90 days'}
+                  </div>
+                </div>
+                <div className="bg-surface-raised rounded p-2.5">
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <Globe className="w-3 h-3 text-text-muted" />
+                    <span className="text-[10px] text-text-muted uppercase tracking-wider">Environment</span>
+                  </div>
+                  <div className="text-sm text-text-primary">
+                    {request.requestedSystem.toLowerCase().includes('prod') || request.requestedSystem.toLowerCase().includes('iam') ? 'Production' : 'All environments'}
+                  </div>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-surface-raised rounded p-2.5">
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <Lock className="w-3 h-3 text-text-muted" />
+                    <span className="text-[10px] text-text-muted uppercase tracking-wider">Scope Limitation</span>
+                  </div>
+                  <div className="text-xs text-text-secondary">
+                    {request.riskLevel === 'high' || request.riskLevel === 'critical'
+                      ? 'Scoped to justification-specified resources only'
+                      : 'Full role permissions within system'}
+                  </div>
+                </div>
+                <div className="bg-surface-raised rounded p-2.5">
+                  <div className="flex items-center gap-1.5 mb-1">
+                    <Eye className="w-3 h-3 text-text-muted" />
+                    <span className="text-[10px] text-text-muted uppercase tracking-wider">Audit</span>
+                  </div>
+                  <div className="text-xs text-text-secondary">
+                    {request.riskLevel === 'high' || request.riskLevel === 'critical'
+                      ? 'Full audit trail + session recording'
+                      : 'Standard audit logging'}
+                  </div>
+                </div>
+              </div>
+              <div className="text-[10px] text-text-muted border-t border-border pt-2">
+                Auto-revocation: {request.riskLevel === 'high' || request.riskLevel === 'critical' ? 'Access auto-revokes after time window expires' : 'Access expires at end of grant period'}
+              </div>
+            </div>
+          )}
+
+          {/* Approval Chain Timeline */}
+          <div className="bg-surface rounded-lg border border-border p-4 space-y-4">
+            <h3 className="text-sm font-medium text-text-primary">Approval Chain</h3>
+            <div className="relative pl-3">
+              {steps.map((s, i) => {
+                const isLast = i === steps.length - 1
+                const isDenied =
+                  s.approvalState === 'denied'
+                const isNotRequired = s.approvalState === 'not_required'
+
+                // Status label
+                let statusLabel = ''
+                let statusColor = 'text-text-muted'
+                if (s.step === 3) {
+                  // Grant execution step
+                  if (s.status === 'locked') {
+                    statusLabel = 'Locked until approvals clear'
+                    statusColor = 'text-text-muted/60'
+                  } else if (s.status === 'completed') {
+                    statusLabel = 'Executed'
+                    statusColor = 'text-status-approved'
+                  } else {
+                    statusLabel = 'Ready'
+                    statusColor = 'text-status-pending'
+                  }
+                } else if (isNotRequired) {
+                  statusLabel = 'Not Required'
+                  statusColor = 'text-text-muted'
+                } else if (isDenied) {
+                  statusLabel = 'Denied'
+                  statusColor = 'text-risk-critical'
+                } else if (s.status === 'completed') {
+                  statusLabel = 'Approved'
+                  statusColor = 'text-status-approved'
+                } else if (s.status === 'active') {
+                  statusLabel = 'Pending'
+                  statusColor = 'text-status-pending'
+                } else {
+                  statusLabel = 'Waiting'
+                  statusColor = 'text-text-muted/60'
+                }
+
+                return (
+                  <div key={s.step} className="relative flex items-start gap-3 pb-1">
+                    {/* Vertical connector line */}
+                    {!isLast && (
+                      <div
+                        className={`absolute left-[9px] top-[26px] w-0.5 h-[calc(100%-10px)] ${stepLineColor(
+                          s.status,
+                        )}`}
+                      />
+                    )}
+                    {/* Icon */}
+                    <div className="relative z-10 flex-shrink-0 mt-0.5">
+                      <StepIcon status={s.status} denied={isDenied} />
+                    </div>
+                    {/* Content */}
+                    <div className="flex-1 pb-4">
+                      <div className="flex items-center justify-between">
+                        <div className="text-sm text-text-primary font-medium">
+                          <span className="text-text-muted mr-1.5">Step {s.step}</span>
+                          {s.label}
+                        </div>
+                        <span className={`text-xs font-medium ${statusColor}`}>
+                          {statusLabel}
+                        </span>
+                      </div>
+                      {s.actor && (
+                        <div className="text-xs text-text-muted mt-0.5">
+                          {s.required ? 'Required' : 'Optional'} &middot; {s.actor}
+                        </div>
+                      )}
+                      {s.step === 3 && (
+                        <div className="text-xs text-text-muted mt-0.5">
+                          {s.status === 'locked'
+                            ? 'Blocked until all prior approvals are obtained'
+                            : s.status === 'active'
+                              ? 'All approvals cleared — grant can be executed'
+                              : 'Grant has been executed successfully'}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* What Happens Next */}
+          <div className="bg-surface rounded-lg border border-border p-4">
+            <h3 className="text-sm font-medium text-text-primary mb-3">What Happens Next</h3>
+            <div className="flex items-start gap-3">
+              <whatsNext.icon
+                className={`w-4 h-4 flex-shrink-0 mt-0.5 ${whatsNext.color}`}
+              />
+              <div className="text-sm text-text-secondary leading-relaxed">{whatsNext.text}</div>
+            </div>
+          </div>
+        </div>
+
+        {/* ---- RIGHT: Action rail ---- */}
+        <div className="space-y-3">
+          {/* Available Now */}
+          <div className="bg-surface rounded-lg border border-border p-4 space-y-3">
+            <h3 className="text-xs font-medium text-text-muted uppercase tracking-wider">
+              Available Now <span className="text-accent">&middot; {config.label}</span>
+            </h3>
+            {availableActions.length === 0 && (
+              <p className="text-xs text-text-muted py-1">No actions available right now.</p>
+            )}
+            {availableActions.map(a => {
+              const Icon = a.icon
+              return (
+                <button
+                  key={a.key}
+                  onClick={() =>
+                    setGuardModal({
+                      open: true,
+                      title: a.label,
+                      description: a.desc,
+                      variant: a.variant,
+                    })
+                  }
+                  className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-sm font-medium ${a.style}`}
+                >
+                  <Icon className="w-4 h-4" /> {a.label}
+                </button>
+              )
+            })}
+          </div>
+
+          {/* Decision Impact — Approver only */}
+          {(role === 'approver' || role === 'access_approver' || role === 'admin') && (() => {
+            const allApprovalsClear =
+              (!request.managerApprovalRequired || request.managerApproval === 'approved' || request.managerApproval === 'not_required') &&
+              (!request.ownerApprovalRequired || request.ownerApproval === 'approved' || request.ownerApproval === 'not_required')
+            const remainingApprovers: string[] = []
+            if (request.managerApprovalRequired && request.managerApproval === 'pending') remainingApprovers.push(request.manager)
+            if (request.ownerApprovalRequired && request.ownerApproval === 'pending') remainingApprovers.push(request.systemOwner)
+            const isFinalApproval = remainingApprovers.length <= 1
+            const isTimeBoxed = request.riskLevel === 'high' || request.riskLevel === 'critical'
+
+            return (
+              <div className="bg-surface rounded-lg border border-accent/20 p-4 space-y-3">
+                <h3 className="text-xs font-medium text-accent uppercase tracking-wider flex items-center gap-1.5">
+                  <AlertTriangle className="w-3 h-3" />
+                  Decision Impact
+                </h3>
+
+                {/* Chain status strip */}
+                <div className={`rounded p-2 text-xs font-medium flex items-center gap-1.5 ${
+                  isFinalApproval && !allApprovalsClear
+                    ? 'bg-accent/10 text-accent'
+                    : allApprovalsClear
+                    ? 'bg-status-approved/10 text-status-approved'
+                    : 'bg-status-pending/10 text-status-pending'
+                }`}>
+                  {isFinalApproval && !allApprovalsClear ? (
+                    <><UserCheck className="w-3 h-3" /> Your approval is the final gate — this will grant access</>
+                  ) : allApprovalsClear ? (
+                    <><CheckCircle className="w-3 h-3" /> All approvals cleared — ready for grant execution</>
+                  ) : (
+                    <><Clock className="w-3 h-3" /> Your approval advances the chain — {remainingApprovers.length - 1} more approver{remainingApprovers.length - 1 !== 1 ? 's' : ''} after you</>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex gap-2">
+                    <CheckCircle className="w-3 h-3 text-status-approved flex-shrink-0 mt-0.5" />
+                    <div>
+                      <div className="text-[10px] font-medium text-status-approved uppercase">If approved</div>
+                      <p className="text-xs text-text-secondary">
+                        {isFinalApproval
+                          ? `${request.requester} receives ${request.requestedRole} on ${request.requestedSystem}.`
+                          : `Advances to next approver. Does not yet grant access.`}
+                        {isFinalApproval && isTimeBoxed && ' Time-boxed access with full audit trail.'}
+                        {isFinalApproval && !isTimeBoxed && ' Standard access provisioned.'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <XCircle className="w-3 h-3 text-status-denied flex-shrink-0 mt-0.5" />
+                    <div>
+                      <div className="text-[10px] font-medium text-status-denied uppercase">If denied</div>
+                      <p className="text-xs text-text-secondary">
+                        Access not granted. {request.requester} notified. Can re-request with updated justification.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <ArrowUpRight className="w-3 h-3 text-status-escalated flex-shrink-0 mt-0.5" />
+                    <div>
+                      <div className="text-[10px] font-medium text-status-escalated uppercase">If escalated</div>
+                      <p className="text-xs text-text-secondary">
+                        Routes to Security for additional review. Access remains blocked until resolution.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Grant details */}
+                {isFinalApproval && (
+                  <div className="border-t border-border pt-2 space-y-1">
+                    <div className="text-[10px] text-text-muted uppercase tracking-wider font-medium">Grant details</div>
+                    <div className="grid grid-cols-2 gap-1.5 text-[11px]">
+                      <div className="text-text-muted">Duration</div>
+                      <div className="text-text-secondary">{isTimeBoxed ? '24h time-boxed' : '90 days'}</div>
+                      <div className="text-text-muted">Scope</div>
+                      <div className="text-text-secondary">{isTimeBoxed ? 'Scoped to justification' : 'Full role'}</div>
+                      <div className="text-text-muted">Audit</div>
+                      <div className="text-text-secondary">{isTimeBoxed ? 'Session recording' : 'Standard logging'}</div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          })()}
+
+          {/* Not Available */}
+          {(blockedByState.length > 0 || blockedByRole.length > 0) && (
+            <div className="bg-surface rounded-lg border border-border p-4 space-y-2">
+              <h3 className="text-xs font-medium text-text-muted uppercase tracking-wider">
+                Not Available
+              </h3>
+              {blockedByState.map(a => {
+                const Icon = a.icon
+                return (
+                  <div key={a.key} className="flex items-start gap-2 py-1.5">
+                    <Icon className="w-3.5 h-3.5 text-text-muted/50 flex-shrink-0 mt-0.5" />
+                    <div>
+                      <div className="text-xs text-text-muted font-medium">{a.label}</div>
+                      <div className="text-[10px] text-text-muted/70">
+                        {'disabledReason' in a && a.disabledReason
+                          ? a.disabledReason
+                          : 'Blocked by current request state'}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+              {blockedByRole.map(blocked => (
+                <div key={blocked.action} className="flex items-start gap-2 py-1.5">
+                  <Ban className="w-3.5 h-3.5 text-text-muted flex-shrink-0 mt-0.5" />
+                  <div>
+                    <div className="text-xs text-text-muted font-medium">{blocked.label}</div>
+                    <div className="text-[10px] text-text-muted/70">{blocked.reason}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Contextual Assistant */}
+          <ContextualAssistant
+            entityType="access_request"
+            entityId={request.id}
+            entityTitle={`${request.requester} → ${request.requestedSystem}`}
+            quickActions={
+              role === 'access_approver' ? [
+                { label: 'What would be granted?', prompt: `What exactly would ${request.requester} get with ${request.requestedRole} on ${request.requestedSystem}?` },
+                { label: 'Is this time-boxed?', prompt: `Is this access request time-boxed? What are the revocation triggers?` },
+                { label: 'Who still needs to approve?', prompt: `Who else needs to approve ${request.requestId} after me?` },
+                { label: 'Why no auto-grant?', prompt: `Why is auto-grant not allowed for this access request?` },
+                { label: 'Least-privilege alternative', prompt: `Is there a more restrictive role than ${request.requestedRole} that would still satisfy the justification?` },
+                { label: 'Draft clarification', prompt: `Draft a clarification request to ${request.requester} about their justification.` },
+              ] : [
+                { label: 'Check eligibility', prompt: `Is ${request.requester} eligible for ${request.requestedRole} on ${request.requestedSystem}?` },
+                { label: 'Route this request', prompt: `Who should approve ${request.requestId}?` },
+                { label: 'Policy check', prompt: `What policies apply to this access request?` },
+              ]
+            }
+          />
+        </div>
+      </div>
+
+      {/* Guard modal */}
+      {guardModal?.open && (
+        <ActionGuardModal
+          isOpen={true}
+          title={guardModal.title}
+          description={guardModal.description}
+          confirmLabel="Confirm"
+          onConfirm={() => setGuardModal(null)}
+          onCancel={() => setGuardModal(null)}
+          variant={guardModal.variant}
+        />
+      )}
+    </div>
+  )
+}

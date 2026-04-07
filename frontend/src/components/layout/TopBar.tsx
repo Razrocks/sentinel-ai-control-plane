@@ -1,7 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
-import { Search, ChevronDown, Bell, CircleUser, Check } from 'lucide-react';
+import { Search, ChevronDown, Bell, CircleUser, Check, LogOut } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useRole, roles, type Role } from '@/lib/roles';
+import { useAuth } from '@/lib/auth';
+import { useNavigate } from 'react-router-dom';
 
 const environments = [
   { id: 'production', label: 'Production', color: 'bg-risk-critical' },
@@ -14,8 +16,15 @@ const roleList = Object.values(roles);
 
 export function TopBar() {
   const { role, config, setRole } = useRole();
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const [envOpen, setEnvOpen] = useState(false);
   const [roleOpen, setRoleOpen] = useState(false);
+
+  const handleLogout = async () => {
+    await logout();
+    navigate('/login');
+  };
   const [activeEnv, setActiveEnv] = useState(environments[0]);
   const envRef = useRef<HTMLDivElement>(null);
   const roleRef = useRef<HTMLDivElement>(null);
@@ -121,6 +130,21 @@ export function TopBar() {
             </div>
           )}
         </div>
+
+        {/* User name + Logout */}
+        {user && (
+          <>
+            <span className="text-xs text-text-secondary hidden lg:inline truncate max-w-[120px]">{user.name}</span>
+            <button
+              type="button"
+              onClick={handleLogout}
+              className="rounded-md p-2 text-text-secondary hover:bg-surface-raised hover:text-red-400 transition-colors"
+              title="Sign out"
+            >
+              <LogOut className="h-4 w-4" />
+            </button>
+          </>
+        )}
       </div>
     </header>
   );

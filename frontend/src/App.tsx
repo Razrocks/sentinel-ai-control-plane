@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
-import { RoleProvider } from '@/lib/roles'
+import { RoleProvider, type Role } from '@/lib/roles'
 import { AuthProvider, useAuth } from '@/lib/auth'
 import { AppShell } from '@/components/layout'
 import Dashboard from '@/pages/Dashboard'
@@ -15,8 +15,9 @@ import Policies from '@/pages/Policies'
 import Settings from '@/pages/Settings'
 import Login from '@/pages/Login'
 
-function AuthGuard({ children }: { children: React.ReactNode }) {
-  const { isAuthenticated, isLoading } = useAuth()
+/** Authenticated app shell — reads auth user and passes role to RoleProvider */
+function AuthenticatedRoutes() {
+  const { isAuthenticated, isLoading, user } = useAuth()
 
   if (isLoading) {
     return (
@@ -30,7 +31,34 @@ function AuthGuard({ children }: { children: React.ReactNode }) {
     return <Navigate to="/login" replace />
   }
 
-  return <>{children}</>
+  return (
+    <RoleProvider initialRole={user?.role as Role}>
+      <Routes>
+        <Route element={<AppShell />}>
+          <Route path="/" element={<Dashboard />} />
+          <Route path="/changes" element={<Changes />} />
+          <Route path="/changes/:id" element={<ChangeDetail />} />
+          <Route path="/incidents" element={<Incidents />} />
+          <Route path="/incidents/:id" element={<IncidentDetail />} />
+          <Route path="/access-requests" element={<AccessRequests />} />
+          <Route path="/access-requests/:id" element={<AccessRequestDetail />} />
+          <Route path="/approvals" element={<Approvals />} />
+          <Route path="/audit" element={<AuditTrail />} />
+          <Route path="/policies" element={<Policies />} />
+          <Route path="/settings" element={<Settings />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Route>
+      </Routes>
+    </RoleProvider>
+  )
+}
+
+/** Redirect to dashboard if already logged in */
+function LoginRoute() {
+  const { isAuthenticated, isLoading } = useAuth()
+  if (isLoading) return null
+  if (isAuthenticated) return <Navigate to="/" replace />
+  return <Login />
 }
 
 export default function App() {
@@ -38,39 +66,10 @@ export default function App() {
     <AuthProvider>
       <BrowserRouter>
         <Routes>
-          <Route path="/login" element={<LoginGuard />} />
-          <Route
-            element={
-              <AuthGuard>
-                <RoleProvider>
-                  <AppShell />
-                </RoleProvider>
-              </AuthGuard>
-            }
-          >
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/changes" element={<Changes />} />
-            <Route path="/changes/:id" element={<ChangeDetail />} />
-            <Route path="/incidents" element={<Incidents />} />
-            <Route path="/incidents/:id" element={<IncidentDetail />} />
-            <Route path="/access-requests" element={<AccessRequests />} />
-            <Route path="/access-requests/:id" element={<AccessRequestDetail />} />
-            <Route path="/approvals" element={<Approvals />} />
-            <Route path="/audit" element={<AuditTrail />} />
-            <Route path="/policies" element={<Policies />} />
-            <Route path="/settings" element={<Settings />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
-          </Route>
+          <Route path="/login" element={<LoginRoute />} />
+          <Route path="/*" element={<AuthenticatedRoutes />} />
         </Routes>
       </BrowserRouter>
     </AuthProvider>
   )
-}
-
-/** Redirect to dashboard if already logged in */
-function LoginGuard() {
-  const { isAuthenticated, isLoading } = useAuth()
-  if (isLoading) return null
-  if (isAuthenticated) return <Navigate to="/" replace />
-  return <Login />
 }

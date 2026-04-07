@@ -10,10 +10,12 @@ class ApiError extends Error {
   }
 }
 
+// Token getter — set by auth module to avoid circular import
+let _getToken: (() => string | null) | null = null
+export function setTokenGetter(fn: () => string | null) { _getToken = fn }
+
 export async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
-  // Lazy import to avoid circular dependency
-  const { getToken } = await import('./auth')
-  const token = getToken()
+  const token = _getToken?.()
   const url = `${API_BASE}${path}`
   const res = await fetch(url, {
     ...options,

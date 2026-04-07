@@ -140,8 +140,15 @@ interface RoleContextValue {
 
 const RoleContext = createContext<RoleContextValue | null>(null)
 
-export function RoleProvider({ children }: { children: ReactNode }) {
-  const [role, setRole] = useState<Role>('operator')
+export function RoleProvider({ children, initialRole }: { children: ReactNode; initialRole?: Role }) {
+  const [role, setRole] = useState<Role>(initialRole || 'operator')
+
+  // Sync with auth user's role when it changes
+  useEffect(() => {
+    if (initialRole && initialRole !== role) {
+      setRole(initialRole)
+    }
+  }, [initialRole])
   const config = roles[role]
 
   const canAccess = (path: string) => {

@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react'
-import { apiFetch } from './api'
+import { apiFetch, setTokenGetter } from './api'
 
 interface AuthUser {
   id: string
@@ -25,6 +25,9 @@ let accessToken: string | null = null
 export function getToken() {
   return accessToken
 }
+
+// Register token getter with API client (avoids circular import)
+setTokenGetter(getToken)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null)

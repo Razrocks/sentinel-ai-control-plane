@@ -18,7 +18,8 @@
       "Bash(docker compose:*)",
       "Bash(docker info:*)",
       "Bash(npx prisma:*)",
-      "Bash(npx tsx:*)"
+      "Bash(npx tsx:*)",
+      "Bash(taskkill //F //IM node.exe)"
     ]
   }
 }

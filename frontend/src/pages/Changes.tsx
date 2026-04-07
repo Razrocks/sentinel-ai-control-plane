@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { ArrowRight, GitPullRequest } from 'lucide-react'
 import { createColumnHelper } from '@tanstack/react-table'
-import { mockChanges } from '@/data/mock'
+import { useChanges } from '@/hooks/useData'
 import { RiskBadge, ApprovalBadge, PolicyBadge, OwnerChip } from '@/components/shared'
 import { DataTable } from '@/components/shared/DataTable'
 import { timeAgo } from '@/lib/utils'

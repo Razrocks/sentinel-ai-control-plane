@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
 import { ArrowRight, KeyRound, UserCheck } from 'lucide-react'
 import { createColumnHelper } from '@tanstack/react-table'
-import { mockAccessRequests } from '@/data/mock'
+import { useAccessRequests } from '@/hooks/useData'
 import { RiskBadge, ApprovalBadge, PolicyBadge, SystemChip } from '@/components/shared'
 import { DataTable } from '@/components/shared/DataTable'
 import { timeAgo } from '@/lib/utils'
@@ -128,6 +128,11 @@ export default function AccessRequests() {
   const { role } = useRole()
   const isAccessApprover = role === 'access_approver'
   const columns = useMemo(() => buildColumns(isAccessApprover), [isAccessApprover])
+  const { data: accessRequests = [], isLoading } = useAccessRequests()
+
+  if (isLoading) {
+    return <div className="flex items-center justify-center h-64 text-text-muted">Loading access requests...</div>
+  }
 
   return (
     <div className="space-y-6">
@@ -140,7 +145,7 @@ export default function AccessRequests() {
         </p>
       </div>
       <DataTable
-        data={mockAccessRequests}
+        data={accessRequests}
         columns={columns}
         searchPlaceholder="Search requests by name, system, role..."
       />

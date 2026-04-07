@@ -23,7 +23,7 @@ import {
   Server,
   Lock,
 } from 'lucide-react'
-import { mockChanges, mockIncidents, mockAccessRequests, mockApprovals, mockPolicyRules, mockAuditEvents } from '@/data/mock'
+import { useChanges, useIncidents, useAccessRequests, useApprovals, usePolicies, useAuditEvents } from '@/hooks/useData'
 import { RiskBadge, ApprovalBadge, PolicyBadge } from '@/components/shared'
 import { timeAgo } from '@/lib/utils'
 import { useRole } from '@/lib/roles'
@@ -86,6 +86,12 @@ const mockCIEvents = [
 
 export default function Dashboard() {
   const { role, config, canAccess } = useRole()
+  const { data: mockChanges = [] } = useChanges()
+  const { data: mockIncidents = [] } = useIncidents()
+  const { data: mockAccessRequests = [] } = useAccessRequests()
+  const { data: mockApprovals = [] } = useApprovals()
+  const { data: mockPolicyRules = [] } = usePolicies()
+  const { data: mockAuditEvents = [] } = useAuditEvents()
 
   const highRiskChanges = mockChanges.filter(c => c.riskLevel === 'high' || c.riskLevel === 'critical')
   const blockedChanges = mockChanges.filter(c => c.policyDecision === 'deny' || c.policyDecision === 'escalate')

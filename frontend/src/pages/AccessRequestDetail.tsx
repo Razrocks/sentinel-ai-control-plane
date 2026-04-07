@@ -22,7 +22,8 @@ import {
   Database,
   Globe,
 } from 'lucide-react'
-import { mockAccessRequests } from '@/data/mock'
+import { useAccessRequest } from '@/hooks/useData'
+import type { AccessRequest } from '@/types'
 import { RiskBadge, ApprovalBadge, PolicyBadge, SystemChip, ActionGuardModal, ContextualAssistant } from '@/components/shared'
 import { formatDate } from '@/lib/utils'
 import { useRole } from '@/lib/roles'
@@ -31,7 +32,7 @@ import { useRole } from '@/lib/roles'
 // Helpers
 // ---------------------------------------------------------------------------
 
-function getRecommendedNextStep(request: (typeof mockAccessRequests)[number]) {
+function getRecommendedNextStep(request: AccessRequest) {
   if (request.managerApprovalRequired && request.managerApproval === 'pending') {
     return {
       icon: Send,
@@ -86,7 +87,7 @@ function getRecommendedNextStep(request: (typeof mockAccessRequests)[number]) {
 
 type StepStatus = 'completed' | 'active' | 'locked'
 
-function getApprovalSteps(request: (typeof mockAccessRequests)[number]) {
+function getApprovalSteps(request: AccessRequest) {
   const managerStatus: StepStatus =
     request.managerApproval === 'approved' || request.managerApproval === 'not_required'
       ? 'completed'
@@ -139,7 +140,7 @@ function getApprovalSteps(request: (typeof mockAccessRequests)[number]) {
   ] as const
 }
 
-function getWhatHappensNext(request: (typeof mockAccessRequests)[number]) {
+function getWhatHappensNext(request: AccessRequest) {
   if (request.status === 'approved') {
     return {
       icon: CheckCircle,
@@ -196,7 +197,16 @@ export default function AccessRequestDetail() {
   } | null>(null)
   const { role, canAction, getBlockedActions, config } = useRole()
 
-  const request = mockAccessRequests.find(r => r.id === id)
+  const { data: request, isLoading } = useAccessRequest(id!)
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <p className="text-text-muted">Loading access request...</p>
+      </div>
+    )
+  }
+
   if (!request) {
     return (
       <div className="flex items-center justify-center h-64">

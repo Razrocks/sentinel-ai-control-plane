@@ -1,11 +1,10 @@
 import { PrismaClient } from '@prisma/client'
-import { hash } from 'crypto'
+import bcrypt from 'bcrypt'
 
 const prisma = new PrismaClient()
 
-function hashPassword(password: string): string {
-  // Simple hash for dev seeding — will use bcrypt in auth phase
-  return hash('sha256', password, 'hex')
+async function hashPassword(password: string): Promise<string> {
+  return bcrypt.hash(password, 10)
 }
 
 async function main() {
@@ -26,14 +25,15 @@ async function main() {
 
   // ─── Users ─────────────────────────────────────────────
   console.log('  Creating users...')
+  const pw = await hashPassword('password')
   await prisma.user.createMany({
     data: [
-      { email: 'operator@sentinel.dev', name: 'Sam Operator', passwordHash: hashPassword('password'), role: 'operator', team: 'Operations' },
-      { email: 'engineer@sentinel.dev', name: 'Priya Engineer', passwordHash: hashPassword('password'), role: 'engineer', team: 'Platform Engineering' },
-      { email: 'itsupport@sentinel.dev', name: 'Jordan Support', passwordHash: hashPassword('password'), role: 'it_support', team: 'IT Support' },
-      { email: 'approver@sentinel.dev', name: 'Alex Approver', passwordHash: hashPassword('password'), role: 'approver', team: 'Change Advisory Board' },
-      { email: 'accessapprover@sentinel.dev', name: 'Dana Access', passwordHash: hashPassword('password'), role: 'access_approver', team: 'Security' },
-      { email: 'admin@sentinel.dev', name: 'Morgan Admin', passwordHash: hashPassword('password'), role: 'admin', team: 'Platform' },
+      { email: 'operator@sentinel.dev', name: 'Sam Operator', passwordHash: pw, role: 'operator', team: 'Operations' },
+      { email: 'engineer@sentinel.dev', name: 'Priya Engineer', passwordHash: pw, role: 'engineer', team: 'Platform Engineering' },
+      { email: 'itsupport@sentinel.dev', name: 'Jordan Support', passwordHash: pw, role: 'it_support', team: 'IT Support' },
+      { email: 'approver@sentinel.dev', name: 'Alex Approver', passwordHash: pw, role: 'approver', team: 'Change Advisory Board' },
+      { email: 'accessapprover@sentinel.dev', name: 'Dana Access', passwordHash: pw, role: 'access_approver', team: 'Security' },
+      { email: 'admin@sentinel.dev', name: 'Morgan Admin', passwordHash: pw, role: 'admin', team: 'Platform' },
     ],
   })
 

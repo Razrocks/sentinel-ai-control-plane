@@ -21,7 +21,7 @@ import {
   ClipboardCopy,
   Zap,
 } from 'lucide-react'
-import { mockIncidents } from '@/data/mock'
+import { useIncident } from '@/hooks/useData'
 import { RiskBadge, SystemChip, ActionGuardModal, ContextualAssistant } from '@/components/shared'
 import { formatDate } from '@/lib/utils'
 import { useRole } from '@/lib/roles'
@@ -178,7 +178,16 @@ export default function IncidentDetail() {
   const [guardModal, setGuardModal] = useState<{ open: boolean; title: string; description: string } | null>(null)
   const { role, canAction, getBlockedActions, config } = useRole()
 
-  const incident = mockIncidents.find(i => i.id === id)
+  const { data: incident, isLoading } = useIncident(id!)
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <p className="text-text-muted">Loading...</p>
+      </div>
+    )
+  }
+
   if (!incident) {
     return (
       <div className="flex items-center justify-center h-64">

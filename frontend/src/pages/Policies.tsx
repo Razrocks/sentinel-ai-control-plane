@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { Shield, ChevronRight, CheckCircle, XCircle, AlertTriangle, Clock, Zap, FileText, ArrowUpRight } from 'lucide-react'
-import { mockPolicyRules, mockAuditEvents } from '@/data/mock'
+import { usePolicies, useAuditEvents } from '@/hooks/useData'
 import { PolicyBadge } from '@/components/shared'
 import { timeAgo } from '@/lib/utils'
 import { useRole } from '@/lib/roles'
@@ -83,15 +83,21 @@ const policyMeta: Record<string, {
 export default function Policies() {
   const [selectedRule, setSelectedRule] = useState<string | null>(null)
   const { role } = useRole()
-  const activeRules = mockPolicyRules.filter(r => r.isActive)
+  const { data: policyRules = [], isLoading: loadingPolicies } = usePolicies()
+  const { data: auditEvents = [], isLoading: loadingAudit } = useAuditEvents()
+  const activeRules = policyRules.filter(r => r.isActive)
   const isAdmin = role === 'admin'
 
-  const selected = mockPolicyRules.find(r => r.id === selectedRule)
+  if (loadingPolicies) {
+    return <div className="text-text-secondary p-8 text-center">Loading policies...</div>
+  }
+
+  const selected = policyRules.find(r => r.id === selectedRule)
   const meta = selected ? policyMeta[selected.id] : null
 
   // Find audit events linked to this policy
   const linkedEvents = selected
-    ? mockAuditEvents.filter(e => e.policyRule === selected.name).slice(0, 3)
+    ? auditEvents.filter(e => e.policyRule === selected.name).slice(0, 3)
     : []
 
   return (
@@ -108,15 +114,15 @@ export default function Policies() {
           <div className="text-sm text-text-secondary">Active Rules</div>
         </div>
         <div className="bg-surface rounded-lg border border-border p-4">
-          <div className="text-2xl font-semibold text-risk-critical">{mockPolicyRules.filter(r => r.decision === 'deny').length}</div>
+          <div className="text-2xl font-semibold text-risk-critical">{policyRules.filter(r => r.decision === 'deny').length}</div>
           <div className="text-sm text-text-secondary">Hard Blocks</div>
         </div>
         <div className="bg-surface rounded-lg border border-border p-4">
-          <div className="text-2xl font-semibold text-status-escalated">{mockPolicyRules.filter(r => r.decision === 'escalate').length}</div>
+          <div className="text-2xl font-semibold text-status-escalated">{policyRules.filter(r => r.decision === 'escalate').length}</div>
           <div className="text-sm text-text-secondary">Escalation Rules</div>
         </div>
         <div className="bg-surface rounded-lg border border-border p-4">
-          <div className="text-2xl font-semibold text-status-simulated">{mockPolicyRules.filter(r => r.decision === 'simulate_only').length}</div>
+          <div className="text-2xl font-semibold text-status-simulated">{policyRules.filter(r => r.decision === 'simulate_only').length}</div>
           <div className="text-sm text-text-secondary">Simulate Only</div>
         </div>
       </div>
@@ -129,7 +135,7 @@ export default function Policies() {
               <h2 className="text-sm font-medium text-text-primary">Policy Rules</h2>
             </div>
             <div className="divide-y divide-border">
-              {mockPolicyRules.map(rule => (
+              {policyRules.map(rule => (
                 <button
                   key={rule.id}
                   onClick={() => setSelectedRule(rule.id)}

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   CheckCircle,
   XCircle,
@@ -16,7 +16,7 @@ import {
   ChevronDown,
   ChevronUp,
 } from 'lucide-react'
-import { mockApprovals } from '@/data/mock'
+import { useApprovals } from '@/hooks/useData'
 import { RiskBadge, PolicyBadge, ActionGuardModal } from '@/components/shared'
 import { timeAgo } from '@/lib/utils'
 import { useRole } from '@/lib/roles'
@@ -46,8 +46,16 @@ function getUrgency(approval: Approval): { label: string; color: string; border:
 }
 
 export default function Approvals() {
+  const { data: fetchedApprovals = [], isLoading } = useApprovals()
   const [filter, setFilter] = useState<FilterType>('all')
-  const [approvals, setApprovals] = useState<Approval[]>(mockApprovals)
+  const [approvals, setApprovals] = useState<Approval[]>([])
+
+  useEffect(() => {
+    if (fetchedApprovals.length > 0) {
+      setApprovals(fetchedApprovals)
+    }
+  }, [fetchedApprovals])
+
   const [guardModal, setGuardModal] = useState<{ action: string; label: string; reason: string } | null>(null)
   const [conditionModal, setConditionModal] = useState<string | null>(null)
   const [conditionText, setConditionText] = useState('')
@@ -107,6 +115,14 @@ export default function Approvals() {
     { id: 'remediation', label: 'Remediation', count: approvals.filter(a => a.type === 'remediation' && a.status === 'pending').length },
     { id: 'escalation', label: 'Escalation', count: approvals.filter(a => a.type === 'escalation' && a.status === 'pending').length },
   ]
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-text-muted">Loading approvals...</div>
+      </div>
+    )
+  }
 
   return (
     <div className="space-y-6">

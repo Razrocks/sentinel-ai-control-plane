@@ -1,7 +1,7 @@
 import { Link } from 'react-router-dom'
 import { ArrowRight, AlertTriangle, BookOpen, Wrench } from 'lucide-react'
 import { createColumnHelper } from '@tanstack/react-table'
-import { mockIncidents } from '@/data/mock'
+import { useIncidents } from '@/hooks/useData'
 import { RiskBadge, SystemChip } from '@/components/shared'
 import { DataTable } from '@/components/shared/DataTable'
 import { timeAgo } from '@/lib/utils'
@@ -112,6 +112,10 @@ const columns = [
 ]
 
 export default function Incidents() {
+  const { data: incidents = [], isLoading } = useIncidents()
+
+  if (isLoading) return <div className="text-text-muted p-8">Loading incidents…</div>
+
   return (
     <div className="space-y-6">
       <div>
@@ -119,7 +123,7 @@ export default function Incidents() {
         <p className="text-text-secondary mt-1">ServiceNow incidents and support issues</p>
       </div>
       <DataTable
-        data={mockIncidents}
+        data={incidents}
         columns={columns}
         searchPlaceholder="Search incidents by title, service, requester..."
       />

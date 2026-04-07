@@ -33,7 +33,7 @@ import {
   Minus,
   Plus,
 } from 'lucide-react'
-import { mockChanges } from '@/data/mock'
+import { useChange } from '@/hooks/useData'
 import {
   RiskBadge,
   ApprovalBadge,
@@ -349,7 +349,16 @@ export default function ChangeDetail() {
   const [guardModal, setGuardModal] = useState<{ open: boolean; title: string; description: string; action: () => void } | null>(null)
   const { role, canAction, getBlockedActions, getActionPermission, config } = useRole()
 
-  const change = mockChanges.find(c => c.id === id)
+  const { data: change, isLoading } = useChange(id!)
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <p className="text-text-muted">Loading change...</p>
+      </div>
+    )
+  }
+
   if (!change) {
     return (
       <div className="flex items-center justify-center h-64">

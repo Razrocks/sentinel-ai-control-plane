@@ -1,7 +1,8 @@
 import { useState, Fragment } from 'react'
 import { Shield, AlertTriangle } from 'lucide-react'
-import { mockAuditEvents } from '@/data/mock'
+import { useAuditEvents } from '@/hooks/useData'
 import { formatDate } from '@/lib/utils'
+import type { AuditEvent } from '@/types'
 import { useRole } from '@/lib/roles'
 
 type FilterType = 'all' | 'change' | 'incident' | 'access' | 'policy' | 'execution' | 'approval'
@@ -24,7 +25,7 @@ const quickFilterDefs: { id: QuickFilter; label: string; color: string }[] = [
   { id: 'restrictions', label: 'Exec Restrictions', color: 'text-status-simulated' },
 ]
 
-function matchesQuickFilter(event: typeof mockAuditEvents[0], qf: QuickFilter): boolean {
+function matchesQuickFilter(event: AuditEvent, qf: QuickFilter): boolean {
   switch (qf) {
     case 'governance':
       return event.objectType === 'policy' || !!event.policyRule
@@ -42,6 +43,7 @@ function matchesQuickFilter(event: typeof mockAuditEvents[0], qf: QuickFilter): 
 }
 
 export default function AuditTrail() {
+  const { data: auditEvents = [], isLoading } = useAuditEvents()
   const { role } = useRole()
   const isAdmin = role === 'admin'
 
@@ -51,9 +53,9 @@ export default function AuditTrail() {
   const [expandedId, setExpandedId] = useState<string | null>(null)
 
   // Apply filters
-  let filtered = filter === 'all' ? mockAuditEvents : mockAuditEvents.filter(e => e.objectType === filter)
+  let filtered = filter === 'all' ? auditEvents : auditEvents.filter(e => e.objectType === filter)
   if (quickFilter) {
-    filtered = mockAuditEvents.filter(e => matchesQuickFilter(e, quickFilter))
+    filtered = auditEvents.filter(e => matchesQuickFilter(e, quickFilter))
   }
 
   const filters: { id: FilterType; label: string }[] = [
@@ -67,9 +69,13 @@ export default function AuditTrail() {
   ]
 
   // Stats for admin
-  const policyEventCount = mockAuditEvents.filter(e => e.objectType === 'policy' || !!e.policyRule).length
-  const blockCount = mockAuditEvents.filter(e => e.result === 'blocked' || e.result === 'denied').length
-  const escalationCount = mockAuditEvents.filter(e => e.result === 'escalated').length
+  const policyEventCount = auditEvents.filter(e => e.objectType === 'policy' || !!e.policyRule).length
+  const blockCount = auditEvents.filter(e => e.result === 'blocked' || e.result === 'denied').length
+  const escalationCount = auditEvents.filter(e => e.result === 'escalated').length
+
+  if (isLoading) {
+    return <div className="text-text-muted py-8 text-center">Loading audit events…</div>
+  }
 
   return (
     <div className="space-y-6">

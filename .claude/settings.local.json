@@ -19,7 +19,8 @@
       "Bash(docker info:*)",
       "Bash(npx prisma:*)",
       "Bash(npx tsx:*)",
-      "Bash(taskkill //F //IM node.exe)"
+      "Bash(taskkill //F //IM node.exe)",
+      "Bash(curl -s http://localhost:3001/api/health)"
     ]
   }
 }

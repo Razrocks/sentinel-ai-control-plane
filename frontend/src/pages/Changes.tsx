@@ -96,6 +96,16 @@ const columns = [
 ]
 
 export default function Changes() {
+  const { data: changes = [], isLoading } = useChanges()
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="text-text-secondary">Loading changes...</div>
+      </div>
+    )
+  }
+
   return (
     <div className="space-y-6">
       <div>
@@ -103,7 +113,7 @@ export default function Changes() {
         <p className="text-text-secondary mt-1">Engineering and release change requests</p>
       </div>
       <DataTable
-        data={mockChanges}
+        data={changes}
         columns={columns}
         searchPlaceholder="Search changes by title, service, owner..."
       />

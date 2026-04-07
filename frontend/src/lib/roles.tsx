@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, type ReactNode } from 'react'
+import { createContext, useContext, useState, useEffect, type ReactNode } from 'react'
 
 export type Role = 'operator' | 'engineer' | 'it_support' | 'approver' | 'access_approver' | 'admin'
 

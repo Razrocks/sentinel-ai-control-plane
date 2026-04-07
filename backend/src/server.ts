@@ -10,6 +10,7 @@ import { approvalsRoutes } from './routes/approvals.js'
 import { auditRoutes } from './routes/audit.js'
 import { policiesRoutes } from './routes/policies.js'
 import { settingsRoutes } from './routes/settings.js'
+import { authRoutes } from './routes/auth.js'
 
 const app = Fastify({
   logger: {
@@ -44,6 +45,7 @@ app.setErrorHandler((error, _request, reply) => {
 })
 
 // ─── Routes ──────────────────────────────────────────────
+await app.register(authRoutes)
 await app.register(changesRoutes)
 await app.register(incidentsRoutes)
 await app.register(accessRequestsRoutes)

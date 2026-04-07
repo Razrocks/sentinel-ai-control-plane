@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm create:*)",
+      "Bash(npm install:*)",
+      "Bash(npx tsc:*)",
+      "Bash(npm run:*)",
+      "Bash(sed -i '/ConfidenceBadge,/d' src/pages/ChangeDetail.tsx)",
+      "Bash(sed -i '/, AlertTriangle, Eye/s/, AlertTriangle, Eye//' src/pages/Policies.tsx)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(npx vite:*)",
+      "Bash(python3 -c \":*)",
+      "Bash(python -c \"print\\(''hello''\\)\")",
+      "Bash(node -e \"console.log\\(''hello''\\)\")",
+      "Bash(node -e \"const fs=require\\(''fs''\\); fs.writeFileSync\\(''C:/Users/Razeen/.claude/plans/zazzy-snuggling-wombat-agent-a26387b31ff4c3669.md'', fs.readFileSync\\(''C:/Users/Razeen/.claude/plans/zazzy-snuggling-wombat.md'',''utf8''\\).slice\\(0,1\\)+''placeholder'',''utf8''\\); console.log\\(''ok''\\)\")",
+      "Bash(node -e \"const fs=require\\(''fs''\\); const content = Buffer.from\\(''IyBTZW50aW5lbCBCYWNrZW5kIEltcGxlbWVudGF0aW9uIFBsYW4KCiMjIEFyY2hpdGVjdHVyZSBEZWNpc2lvbnMKCiMjIyAxLiBCYWNrZW5kIEZyYW1ld29yazogRmFzdGlmeQoqKlJlY29tbWVuZGF0aW9uOiBGYXN0aWZ5IG92ZXIgRXhwcmVzcy4qKgotIE5hdGl2ZSBUeXBlU2NyaXB0IHN1cHBvcnQgd2l0aCB0eXBlLXNhZmUgcm91dGUgc2NoZW1hcwotIDItM3ggZmFzdGVyIHRoYW4gRXhwcmVzcyBpbiBiZW5jaG1hcmtzIChtYXR0ZXJzIGZvciByZWFsLXRpbWUgZmVlbCByZXF1aXJlbWVudCkKLSBCdWlsdC1pbiBKU09OIHNjaGVtYSB2YWxpZGF0aW9uIChyZXBsYWNlcyBuZWVkIGZvciBzZXBhcmF0ZSB2YWxpZGF0aW9uIGxpYnJhcnkpCi0gRmlyc3QtY2xhc3MgcGx1Z2luIHN5c3RlbSBmb3IgY2xlYW4gbW9kdWxhciBhcmNoaXRlY3R1cmUKLSBXZWJTb2NrZXQgc3VwcG9ydCB2aWEgQGZhc3RpZnkvd2Vic29ja2V0Ci0gU3dhZ2dlci9PcGVuQVBJIGdlbmVyYXRpb24gZnJvbSBzY2hlbWFzIGZvciBmcmVlCgojIyMgMi4gT1JNOiBEcml6emxlCioqUmVjb21tZW5kYXRpb246IERyaXp6bGUgb3ZlciBQcmlzbWEuKioKLSBaZXJvLW92ZXJoZWFkIFNRTCAtLSBnZW5lcmF0ZXMgY2xlYW4sIHByZWRpY3RhYmxlIHF1ZXJpZXMgKG5vIE4rMSBzdXJwcmlzZXMpCi0gU2NoZW1hIGRlZmluZWQgaW4gVHlwZVNjcmlwdCAtLSBzaGFyZXMgdHlwZSB1bml2ZXJzZSB3aXRoIGZyb250ZW5kIHR5cGVzCi0gUHVzaC1iYXNlZCBtaWdyYXRpb25zIChubyBzZXBhcmF0ZSBtaWdyYXRpb24gZW5naW5lIG5lZWRlZCBlYXJseSBvbikKLSBNdWNoIHNtYWxsZXIgcnVudGltZSBmb290cHJpbnQgdGhhbiBQcmlzbWEgKG5vIFJ1c3QgZW5naW5lIGJpbmFyeSkKLSBCZXR0ZXIgZm9yIHN0YXJ0dXAgc3BlZWQ6IGxlc3MgY2VyZW1vbnksIGNsb3NlciB0byBTUUwgd2hlbiB5b3UgbmVlZCBpdAotIGRyaXp6bGUtem9kIGdlbmVyYXRlcyBab2QgdmFsaWRhdG9ycyBmcm9tIHNjaGVtYXMgZm9yIGlucHV0IHZhbGlkYXRpb24KCiMjIyAzLiBEYXRhYmFzZTogUG9zdGdyZVNRTAotIFN0YW5kYXJkIGNob2ljZS4gUnVuIGluIERvY2tlciBhbG9uZ3NpZGUgdGhlIGJhY2tlbmQuCi0gRHJpenpsZSBQb3N0Z3JlcyBkcml2ZXIgKGRyaXp6bGUtb3JtL3Bvc3RncmVzLWpzKSBpcyBsaWdodHdlaWdodCBhbmQgZmFzdC4KCiMjIyA0LiBBdXRoOiBKV1Qgd2l0aCBjb29raWUgc2Vzc2lvbnMKLSBKV1QgdG9rZW5zIGlzc3VlZCBvbiBsb2dpbiwgc3RvcmVkIGluIEhUVFAtb25seSBzZWN1cmUgY29va2llcwotIFNob3J0LWxpdmVkIGFjY2VzcyB0b2tlbnMgKDE1IG1pbikgKyBsb25nZXIgcmVmcmVzaCB0b2tlbnMgKDcgZGF5cykKLSBObyBPQXV0aCBpbiBQaGFzZSAxIC0tIHNpbXBsZSB1c2VybmFtZS9wYXNzd29yZCB3aXRoIGJjcnlwdAotIFRoZSBleGlzdGluZyA2LXJvbGUgUkJBQyBzeXN0ZW0gbWFwcyBkaXJlY3RseSB0byBhIHJvbGUgZmllbGQgb24gdGhlIFVzZXIgbW9kZWwKLSBNaWRkbGV3YXJlIGV4dHJhY3RzIHVzZXIgKyByb2xlIGZyb20gSldULCBpbmplY3RzIGludG8gcmVxdWVzdCBjb250ZXh0Ci0gT0F1dGgvU1NPIGNhbiBiZSBhZGRlZCBsYXRlciBhcyBhIGZ1dHVyZSBlbmhhbmNlbWVudAoKIyMjIDUuIEFQSSBEZXNpZ246IFJFU1QgKG5vdCB0UlBDKQoqKlJlY29tbWVuZGF0aW9uOiBSRVNUIG92ZXIgdFJQQy4qKgotIFRoZSBmcm9udGVuZCBhbHJlYWR5IHVzZXMgcmVhY3Qtcm91dGVyLWRvbSAtLSBubyB0UlBDIGluZnJhc3RydWN0dXJlIGV4aXN0cwotIFJFU1QgaXMgc2ltcGxlciB0byBkZWJ1ZywgY3VybCwgYW5kIGludGVncmF0ZSB3aXRoIE1DUCBzZXJ2ZXJzCi0gdFJQQyBhZGRzIGEgYnVpbGQtdGltZSBjb3VwbGluZyBiZXR3ZWVuIGZyb250ZW5kL2JhY2tlbmQgdGhhdCBjb21wbGljYXRlcyBEb2NrZXIgZGVwbG95cwotIFRoZSB0eXBlcyBmcm9tIGZyb250ZW5kL3NyYy90eXBlcy9pbmRleC50cyBjYW4gYmUgZXh0cmFjdGVkIHRvIGEgc2hhcmVkIHBhY2thZ2UKLSBPZ'', ''base64''\\).toString\\(''utf8''\\); fs.writeFileSync\\(''C:/Users/Razeen/.claude/plans/zazzy-snuggling-wombat-agent-a26387b31ff4c3669.md'', content, ''utf8''\\); console.log\\(''wrote'', content.length, ''chars''\\)\")",
+      "Bash(docker --version)",
+      "Bash(docker compose:*)",
+      "Bash(docker info:*)",
+      "Bash(npx prisma:*)",
+      "Bash(npx tsx:*)"
+    ]
+  }
+}

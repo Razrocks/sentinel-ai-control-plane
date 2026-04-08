@@ -11,6 +11,7 @@ import { auditRoutes } from './routes/audit.js'
 import { policiesRoutes } from './routes/policies.js'
 import { settingsRoutes } from './routes/settings.js'
 import { authRoutes } from './routes/auth.js'
+import { actionsRoutes } from './routes/actions.js'
 
 const app = Fastify({
   logger: {
@@ -40,7 +41,7 @@ app.setErrorHandler((error, _request, reply) => {
   app.log.error(error)
   return reply.status(500).send({
     error: 'INTERNAL_SERVER_ERROR',
-    message: config.nodeEnv === 'development' ? error.message : 'Internal server error',
+    message: config.nodeEnv === 'development' ? (error as Error).message : 'Internal server error',
   })
 })
 
@@ -53,6 +54,7 @@ await app.register(approvalsRoutes)
 await app.register(auditRoutes)
 await app.register(policiesRoutes)
 await app.register(settingsRoutes)
+await app.register(actionsRoutes)
 
 // ─── Health check ────────────────────────────────────────
 app.get('/api/health', async () => {

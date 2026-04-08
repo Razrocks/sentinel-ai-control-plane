@@ -20,7 +20,10 @@
       "Bash(npx prisma:*)",
       "Bash(npx tsx:*)",
       "Bash(taskkill //F //IM node.exe)",
-      "Bash(curl -s http://localhost:3001/api/health)"
+      "Bash(curl -s http://localhost:3001/api/health)",
+      "Bash(tasklist //FI 'IMAGENAME eq node.exe')",
+      "Bash(node -e \"process.stdin.on\\(''''data'''',d=>console.log\\(JSON.stringify\\(JSON.parse\\(d\\),null,2\\)\\)\\)\")",
+      "Bash(node -e \"process.stdin.on\\(''''data'''',d=>console.log\\(JSON.parse\\(d\\).status\\)\\)\")"
     ]
   }
 }

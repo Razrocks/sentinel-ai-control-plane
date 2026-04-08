@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import {
   CheckCircle,
   XCircle,
@@ -17,6 +17,7 @@ import {
   ChevronUp,
 } from 'lucide-react'
 import { useApprovals } from '@/hooks/useData'
+import { useApprovalDecision } from '@/hooks/useMutations'
 import { RiskBadge, PolicyBadge, ActionGuardModal } from '@/components/shared'
 import { timeAgo } from '@/lib/utils'
 import { useRole } from '@/lib/roles'
@@ -46,15 +47,9 @@ function getUrgency(approval: Approval): { label: string; color: string; border:
 }
 
 export default function Approvals() {
-  const { data: fetchedApprovals = [], isLoading } = useApprovals()
+  const { data: approvals = [], isLoading } = useApprovals()
   const [filter, setFilter] = useState<FilterType>('all')
-  const [approvals, setApprovals] = useState<Approval[]>([])
-
-  useEffect(() => {
-    if (fetchedApprovals.length > 0) {
-      setApprovals(fetchedApprovals)
-    }
-  }, [fetchedApprovals])
+  const approvalDecision = useApprovalDecision()
 
   const [guardModal, setGuardModal] = useState<{ action: string; label: string; reason: string } | null>(null)
   const [conditionModal, setConditionModal] = useState<string | null>(null)
@@ -75,7 +70,7 @@ export default function Approvals() {
       setGuardModal({ action: 'approve', label: 'Approve', reason: perm.reason || 'Not permitted' })
       return
     }
-    setApprovals(prev => prev.map(a => a.id === id ? { ...a, status: 'approved' as const } : a))
+    approvalDecision.mutate({ id, decision: 'approved' })
   }
 
   const handleApproveWithCondition = (id: string) => {
@@ -90,11 +85,11 @@ export default function Approvals() {
 
   const confirmCondition = () => {
     if (!conditionModal || !conditionText.trim()) return
-    setApprovals(prev => prev.map(a =>
-      a.id === conditionModal
-        ? { ...a, status: 'approved_with_condition' as const, condition: conditionText.trim() }
-        : a
-    ))
+    approvalDecision.mutate({
+      id: conditionModal,
+      decision: 'approved_with_condition',
+      condition: conditionText.trim(),
+    })
     setConditionModal(null)
     setConditionText('')
   }
@@ -105,7 +100,7 @@ export default function Approvals() {
       setGuardModal({ action: 'deny', label: 'Deny', reason: perm.reason || 'Not permitted' })
       return
     }
-    setApprovals(prev => prev.map(a => a.id === id ? { ...a, status: 'denied' as const } : a))
+    approvalDecision.mutate({ id, decision: 'denied' })
   }
 
   const filters: { id: FilterType; label: string; count: number }[] = [

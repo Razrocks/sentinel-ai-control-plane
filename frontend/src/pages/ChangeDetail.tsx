@@ -34,6 +34,7 @@ import {
   Plus,
 } from 'lucide-react'
 import { useChange } from '@/hooks/useData'
+import { useChangeExecute, useChangeSimulate, useChangeEscalate } from '@/hooks/useMutations'
 import {
   RiskBadge,
   ApprovalBadge,
@@ -350,6 +351,9 @@ export default function ChangeDetail() {
   const { role, canAction, getBlockedActions, getActionPermission, config } = useRole()
 
   const { data: change, isLoading } = useChange(id!)
+  const executeChange = useChangeExecute()
+  const simulateChange = useChangeSimulate()
+  const escalateChange = useChangeEscalate()
 
   if (isLoading) {
     return (
@@ -388,8 +392,40 @@ export default function ChangeDetail() {
     { id: 'artifacts', label: 'Code & PR', count: filesImpacted.length || undefined },
   ]
 
-  const handleAction = (title: string, description: string) => {
-    setGuardModal({ open: true, title, description, action: () => setGuardModal(null) })
+  const handleAction = (actionKey: string, title: string, description: string) => {
+    if (actionKey === 'simulate') {
+      setGuardModal({
+        open: true,
+        title: 'Run Simulation',
+        description,
+        action: () => {
+          simulateChange.mutate(change!.id)
+          setGuardModal(null)
+        },
+      })
+    } else if (actionKey === 'escalate') {
+      setGuardModal({
+        open: true,
+        title: 'Escalate Change',
+        description,
+        action: () => {
+          escalateChange.mutate({ changeId: change!.id })
+          setGuardModal(null)
+        },
+      })
+    } else if (actionKey === 'execute') {
+      setGuardModal({
+        open: true,
+        title: 'Execute Change',
+        description: 'This will deploy the change to the target environment.',
+        action: () => {
+          executeChange.mutate(change!.id)
+          setGuardModal(null)
+        },
+      })
+    } else {
+      setGuardModal({ open: true, title, description, action: () => setGuardModal(null) })
+    }
   }
 
   // --- Next step ---
@@ -983,7 +1019,7 @@ export default function ChangeDetail() {
                 return (
                   <button
                     key={a.key}
-                    onClick={() => handleAction(a.label, a.desc)}
+                    onClick={() => handleAction(a.key, a.label, a.desc)}
                     disabled={a.disabled}
                     className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-sm font-medium disabled:opacity-40 disabled:cursor-not-allowed ${a.style}`}
                   >

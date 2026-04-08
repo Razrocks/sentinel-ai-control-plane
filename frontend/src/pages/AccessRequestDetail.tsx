@@ -23,6 +23,7 @@ import {
   Globe,
 } from 'lucide-react'
 import { useAccessRequest } from '@/hooks/useData'
+import { useAccessRequestDecide } from '@/hooks/useMutations'
 import type { AccessRequest } from '@/types'
 import { RiskBadge, ApprovalBadge, PolicyBadge, SystemChip, ActionGuardModal, ContextualAssistant } from '@/components/shared'
 import { formatDate } from '@/lib/utils'
@@ -194,10 +195,12 @@ export default function AccessRequestDetail() {
     title: string
     description: string
     variant: 'danger' | 'warning' | 'info'
+    action?: () => void
   } | null>(null)
   const { role, canAction, getBlockedActions, config } = useRole()
 
   const { data: request, isLoading } = useAccessRequest(id!)
+  const accessDecide = useAccessRequestDecide()
 
   if (isLoading) {
     return (
@@ -629,14 +632,29 @@ export default function AccessRequestDetail() {
               return (
                 <button
                   key={a.key}
-                  onClick={() =>
+                  onClick={() => {
+                    const actionFn = (() => {
+                      if (a.key === 'approve') return () => {
+                        // Determine role: if user is access_approver/admin, they're the owner; approver could be either
+                        const approverRole = role === 'access_approver' ? 'owner' : (request.managerApproval === 'pending' ? 'manager' : 'owner')
+                        accessDecide.mutate({ id: request.requestId, decision: 'approved', role: approverRole })
+                        setGuardModal(null)
+                      }
+                      if (a.key === 'deny') return () => {
+                        const approverRole = role === 'access_approver' ? 'owner' : (request.managerApproval === 'pending' ? 'manager' : 'owner')
+                        accessDecide.mutate({ id: request.requestId, decision: 'denied', role: approverRole })
+                        setGuardModal(null)
+                      }
+                      return () => setGuardModal(null)
+                    })()
                     setGuardModal({
                       open: true,
                       title: a.label,
                       description: a.desc,
                       variant: a.variant,
+                      action: actionFn,
                     })
-                  }
+                  }}
                   className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-sm font-medium ${a.style}`}
                 >
                   <Icon className="w-4 h-4" /> {a.label}
@@ -796,7 +814,7 @@ export default function AccessRequestDetail() {
           title={guardModal.title}
           description={guardModal.description}
           confirmLabel="Confirm"
-          onConfirm={() => setGuardModal(null)}
+          onConfirm={() => { guardModal.action ? guardModal.action() : setGuardModal(null) }}
           onCancel={() => setGuardModal(null)}
           variant={guardModal.variant}
         />

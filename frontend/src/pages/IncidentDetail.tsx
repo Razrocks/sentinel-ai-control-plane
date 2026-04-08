@@ -22,6 +22,7 @@ import {
   Zap,
 } from 'lucide-react'
 import { useIncident } from '@/hooks/useData'
+import { useIncidentUpdateStatus } from '@/hooks/useMutations'
 import { RiskBadge, SystemChip, ActionGuardModal, ContextualAssistant } from '@/components/shared'
 import { formatDate } from '@/lib/utils'
 import { useRole } from '@/lib/roles'
@@ -175,10 +176,11 @@ function getRecommendedNextStep(incident: (typeof mockIncidents)[number]) {
 
 export default function IncidentDetail() {
   const { id } = useParams<{ id: string }>()
-  const [guardModal, setGuardModal] = useState<{ open: boolean; title: string; description: string } | null>(null)
+  const [guardModal, setGuardModal] = useState<{ open: boolean; title: string; description: string; action?: () => void } | null>(null)
   const { role, canAction, getBlockedActions, config } = useRole()
 
   const { data: incident, isLoading } = useIncident(id!)
+  const updateStatus = useIncidentUpdateStatus()
 
   if (isLoading) {
     return (
@@ -590,7 +592,18 @@ export default function IncidentDetail() {
                   return (
                     <button
                       key={a.key}
-                      onClick={() => setGuardModal({ open: true, title: a.label, description: a.desc })}
+                      onClick={() => {
+                        const actionFn = (() => {
+                          if (a.key === 'trigger_fix') return () => {
+                            // Trigger allowed fix → move to monitoring/identified
+                            const nextStatus = incident.status === 'investigating' ? 'identified' : 'monitoring'
+                            updateStatus.mutate({ id: incident.incidentId, status: nextStatus })
+                            setGuardModal(null)
+                          }
+                          return undefined
+                        })()
+                        setGuardModal({ open: true, title: a.label, description: a.desc, action: actionFn })
+                      }}
                       className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-sm font-medium ${a.style}`}
                     >
                       <Icon className="w-4 h-4" /> {a.label}
@@ -742,7 +755,7 @@ export default function IncidentDetail() {
           title={guardModal.title}
           description={guardModal.description}
           confirmLabel="Confirm"
-          onConfirm={() => setGuardModal(null)}
+          onConfirm={() => { guardModal.action ? guardModal.action() : setGuardModal(null) }}
           onCancel={() => setGuardModal(null)}
           variant="info"
         />

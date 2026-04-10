@@ -1,6 +1,7 @@
-import { useState, Fragment } from 'react'
-import { Shield, AlertTriangle } from 'lucide-react'
+import { useState, useMemo, Fragment } from 'react'
+import { Shield, AlertTriangle, Radio } from 'lucide-react'
 import { useAuditEvents } from '@/hooks/useData'
+import { useAuditStream } from '@/hooks/useAuditStream'
 import { formatDate } from '@/lib/utils'
 import type { AuditEvent } from '@/types'
 import { useRole } from '@/lib/roles'
@@ -43,9 +44,31 @@ function matchesQuickFilter(event: AuditEvent, qf: QuickFilter): boolean {
 }
 
 export default function AuditTrail() {
-  const { data: auditEvents = [], isLoading } = useAuditEvents()
+  const { data: fetchedEvents = [], isLoading } = useAuditEvents()
+  const { liveEvents, connected, receivedCount } = useAuditStream()
   const { role } = useRole()
   const isAdmin = role === 'admin'
+
+  // Merge: live events first (newest), then fetched, deduped by id
+  const auditEvents = useMemo(() => {
+    const seen = new Set<string>()
+    const merged: AuditEvent[] = []
+    // Live events are newest-first
+    for (const e of liveEvents) {
+      if (!seen.has(e.id)) {
+        seen.add(e.id)
+        merged.push(e)
+      }
+    }
+    // Fetched events are also newest-first from the API
+    for (const e of fetchedEvents) {
+      if (!seen.has(e.id)) {
+        seen.add(e.id)
+        merged.push(e)
+      }
+    }
+    return merged
+  }, [fetchedEvents, liveEvents])
 
   // Admin defaults to 'governance' quick filter, others to regular 'all'
   const [filter, setFilter] = useState<FilterType>(isAdmin ? 'all' : 'all')
@@ -79,11 +102,27 @@ export default function AuditTrail() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-text-primary">Audit Trail</h1>
-        <p className="text-text-secondary mt-1">
-          {isAdmin ? 'Governance event history — policy evaluations, blocks, access decisions, and restrictions' : 'Complete decision and action history'}
-        </p>
+      <div className="flex items-start justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold text-text-primary">Audit Trail</h1>
+          <p className="text-text-secondary mt-1">
+            {isAdmin ? 'Governance event history — policy evaluations, blocks, access decisions, and restrictions' : 'Complete decision and action history'}
+          </p>
+        </div>
+        {/* Live stream indicator */}
+        <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-medium ${
+          connected
+            ? 'bg-status-approved/10 text-status-approved'
+            : 'bg-surface-raised text-text-muted'
+        }`}>
+          <Radio className={`w-3.5 h-3.5 ${connected ? 'animate-pulse' : ''}`} />
+          {connected ? 'Live' : 'Connecting…'}
+          {receivedCount > 0 && (
+            <span className="bg-accent/20 text-accent px-1.5 py-0.5 rounded-full text-[10px] font-semibold">
+              +{receivedCount}
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Admin: governance summary strip */}
@@ -174,10 +213,12 @@ export default function AuditTrail() {
             </tr>
           </thead>
           <tbody className="divide-y divide-border">
-            {filtered.map(event => (
+            {filtered.map(event => {
+              const isLive = liveEvents.some(e => e.id === event.id)
+              return (
               <Fragment key={event.id}>
                 <tr
-                  className="hover:bg-surface-raised transition-colors cursor-pointer"
+                  className={`hover:bg-surface-raised transition-colors cursor-pointer ${isLive ? 'animate-[fadeIn_0.5s_ease-out] bg-accent/5' : ''}`}
                   onClick={() => setExpandedId(expandedId === event.id ? null : event.id)}
                 >
                   <td className="px-4 py-3 text-xs text-text-muted font-mono whitespace-nowrap">{formatDate(event.timestamp)}</td>
@@ -202,7 +243,8 @@ export default function AuditTrail() {
                   </tr>
                 )}
               </Fragment>
-            ))}
+              )
+            })}
             {filtered.length === 0 && (
               <tr>
                 <td colSpan={6} className="px-4 py-8 text-center text-sm text-text-muted">

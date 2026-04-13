@@ -24,7 +24,12 @@
       "Bash(tasklist //FI 'IMAGENAME eq node.exe')",
       "Bash(node -e \"process.stdin.on\\(''''data'''',d=>console.log\\(JSON.stringify\\(JSON.parse\\(d\\),null,2\\)\\)\\)\")",
       "Bash(node -e \"process.stdin.on\\(''''data'''',d=>console.log\\(JSON.parse\\(d\\).status\\)\\)\")",
-      "Bash(curl -s -X POST http://localhost:3001/api/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"operator@sentinel.dev\",\"password\":\"sentinel123\"}')"
+      "Bash(curl -s -X POST http://localhost:3001/api/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"operator@sentinel.dev\",\"password\":\"sentinel123\"}')",
+      "Bash(pg_isready -h localhost -p 5433)",
+      "Bash(psql -h localhost -p 5432 -U sentinel -d sentinel -c \"SELECT 1\")",
+      "Bash(psql -h localhost -p 5432 -U postgres -c \"\\\\l\")",
+      "Bash(taskkill //F //IM \"tsx.exe\")",
+      "Bash(taskkill //F //IM \"node.exe\" //FI \"WINDOWTITLE eq *server*\")"
     ]
   }
 }

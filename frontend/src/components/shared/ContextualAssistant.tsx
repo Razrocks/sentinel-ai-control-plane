@@ -14,8 +14,10 @@ import {
   MessageSquare,
   Code,
   ChevronDown,
+  Loader2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { chatStream } from '@/lib/api'
 import { useRole, type Role } from '@/lib/roles'
 
 type MessageType = 'text' | 'explanation' | 'recommendation' | 'policy_rationale' | 'action_result' | 'guardrail' | 'draft_artifact' | 'code_snippet'
@@ -50,79 +52,6 @@ interface ContextualAssistantProps {
   quickActions?: QuickAction[]
 }
 
-// Mock responses keyed by entity type and role
-const mockResponses: Record<string, Record<Role, { content: string; type: MessageType; actionResult?: ActionResult }[]>> = {
-  change: {
-    operator: [
-      { type: 'explanation', content: 'This change has a high blast radius affecting 5 downstream services. The migration requires a backfill to complete before the NOT NULL constraint can be applied.' },
-      { type: 'recommendation', content: 'Route to SRE and Data Platform for review. Recommend scheduling during the next maintenance window (Sat 02:00 UTC).' },
-      { type: 'action_result', content: 'Assessment drafted.', actionResult: { decision: 'escalate', summary: 'High blast radius — requires senior engineer review and SRE sign-off before scheduling.', policyRule: 'blast-radius-threshold' } },
-      { type: 'guardrail', content: 'Direct execution is blocked for this change. It requires dual approval (SRE + Data Platform) before it can proceed to controlled execution.' },
-    ],
-    engineer: [
-      { type: 'code_snippet', content: '```sql\nALTER TABLE orders ALTER COLUMN customer_id SET NOT NULL;\n```\nBackfill ~1.2M rows first. Run in batches of 1000.' },
-      { type: 'recommendation', content: 'Run simulation first. Validate backfill strategy in staging before requesting production approval.' },
-    ],
-    approver: [
-      { type: 'recommendation', content: 'Approve with conditions: maintenance window required, rollback plan verified, backfill completion confirmed.' },
-    ],
-    it_support: [
-      { type: 'explanation', content: 'This change is currently in review. No IT Support actions are required at this stage.' },
-    ],
-    access_approver: [
-      { type: 'explanation', content: 'This change does not involve access requests. No action needed from Access Approver.' },
-    ],
-    admin: [
-      { type: 'policy_rationale', content: 'production-write-guard policy blocked direct execution. Schema migration with blast radius > 3 services requires controlled_apply mode with dual approval.' },
-    ],
-  },
-  incident: {
-    operator: [
-      { type: 'explanation', content: 'This is a recurring issue. KB-4521 has the standard fix — config-only change to HikariCP max-pool-size. No code deployment required.' },
-      { type: 'recommendation', content: 'Draft the remediation and route for approval. The fix is safe and has been applied successfully 3 times before.' },
-      { type: 'action_result', content: 'Triage complete.', actionResult: { decision: 'allow', summary: 'Known issue with safe fix path. Remediation can proceed after approval.', policyRule: 'safe-remediation-auto-propose' } },
-    ],
-    engineer: [
-      { type: 'explanation', content: 'Root cause: HikariCP pool exhaustion under load spike. Config change to max-pool-size from 20→40 resolves it.' },
-    ],
-    it_support: [
-      { type: 'recommendation', content: 'Apply KB-4521 fix. Draft customer response with 30-minute ETA. No code changes required.' },
-      { type: 'draft_artifact', content: '**Draft Response:**\nWe\'ve identified the root cause as connection pool exhaustion. A config update is being applied with no expected downtime. ETA: 30 minutes.' },
-    ],
-    approver: [
-      { type: 'recommendation', content: 'The proposed remediation is a config-only change. Approve and monitor.' },
-    ],
-    access_approver: [
-      { type: 'explanation', content: 'This incident does not involve access requests.' },
-    ],
-    admin: [
-      { type: 'explanation', content: 'Recurring incident. 3 occurrences in 30 days. Consider permanent capacity increase.' },
-    ],
-  },
-  access_request: {
-    operator: [
-      { type: 'explanation', content: 'This access request requires manager approval first, then system owner sign-off. Current status: manager approval pending.' },
-      { type: 'recommendation', content: 'Route to the user\'s manager for initial approval. Once manager approves, it routes automatically to the system owner.' },
-      { type: 'guardrail', content: 'Access grants require Access Approver or Admin role. You can prepare the routing and add notes but cannot approve directly.' },
-    ],
-    engineer: [
-      { type: 'explanation', content: 'This access request is outside your scope. No engineering actions available.' },
-    ],
-    it_support: [
-      { type: 'recommendation', content: 'Verify the user\'s eligibility and route to the appropriate approver chain.' },
-    ],
-    approver: [
-      { type: 'recommendation', content: 'Entitlement check passed. Recommend approving with a 90-day time-bound scope.' },
-    ],
-    access_approver: [
-      { type: 'explanation', content: 'You are the system owner for this system. Manager approval is required before your sign-off.' },
-      { type: 'action_result', content: 'Entitlement check complete.', actionResult: { decision: 'allow', summary: 'User eligible. Manager approval is the only remaining gate.', policyRule: 'dual-approval-access' } },
-    ],
-    admin: [
-      { type: 'explanation', content: 'All checks passed. Awaiting manager and system owner dual approval per policy.' },
-    ],
-  },
-}
 
 const typeIcons: Record<MessageType, typeof Lightbulb> = {
   text: MessageSquare,
@@ -157,13 +86,20 @@ export function ContextualAssistant({ entityType, entityId, entityTitle, quickAc
   const [isExpanded, setIsExpanded] = useState(true)
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
+  const [isStreaming, setIsStreaming] = useState(false)
   const { role, config } = useRole()
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const abortRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  // Clean up stream on unmount
+  useEffect(() => {
+    return () => { abortRef.current?.abort() }
+  }, [])
 
   const defaultQuickActions: QuickAction[] = quickActions || [
     { label: 'Assess this', prompt: `Give me an assessment of ${entityTitle}` },
@@ -171,8 +107,8 @@ export function ContextualAssistant({ entityType, entityId, entityTitle, quickAc
     { label: 'Policy check', prompt: `What policies apply to ${entityTitle}?` },
   ]
 
-  const sendMessage = (text: string) => {
-    if (!text.trim()) return
+  const sendMessage = async (text: string) => {
+    if (!text.trim() || isStreaming) return
 
     const userMsg: Message = {
       id: `ctx-${Date.now()}`,
@@ -181,23 +117,61 @@ export function ContextualAssistant({ entityType, entityId, entityTitle, quickAc
       type: 'text',
     }
 
-    const responses = mockResponses[entityType]?.[role] || mockResponses[entityType]?.operator || []
-    const response = responses[Math.floor(Math.random() * responses.length)]
-    const assistantMsg: Message = response ? {
-      id: `ctx-${Date.now() + 1}`,
+    const assistantMsgId = `ctx-${Date.now() + 1}`
+    const assistantMsg: Message = {
+      id: assistantMsgId,
       role: 'assistant',
-      content: response.content,
-      type: response.type,
-      actionResult: response.actionResult,
-    } : {
-      id: `ctx-${Date.now() + 1}`,
-      role: 'assistant',
-      content: `I can help with ${entityTitle}. What specifically would you like to know?`,
+      content: '',
       type: 'text',
     }
 
     setMessages(prev => [...prev, userMsg, assistantMsg])
     setInput('')
+    setIsStreaming(true)
+
+    // Build message history for API
+    const allMessages = [...messages, userMsg].map(m => ({
+      role: m.role as 'user' | 'assistant',
+      content: m.content,
+    }))
+
+    const controller = await chatStream(
+      allMessages,
+      {
+        pagePath: window.location.pathname,
+        entityType: entityType === 'access_request' ? 'access_request' : entityType,
+        entityId,
+      },
+      // onChunk
+      (chunk) => {
+        setMessages(prev =>
+          prev.map(m =>
+            m.id === assistantMsgId
+              ? { ...m, content: m.content + chunk }
+              : m
+          )
+        )
+      },
+      // onDone
+      () => {
+        setIsStreaming(false)
+        abortRef.current = null
+      },
+      // onError
+      (err) => {
+        setMessages(prev =>
+          prev.map(m =>
+            m.id === assistantMsgId
+              ? { ...m, content: `Error: ${err}` }
+              : m
+          )
+        )
+        setIsStreaming(false)
+        abortRef.current = null
+      },
+    )
+
+    abortRef.current = controller
   }
 
   return (
@@ -301,7 +275,7 @@ export function ContextualAssistant({ entityType, entityId, entityTitle, quickAc
           </div>
 
           {/* Quick actions when there are messages */}
-          {messages.length > 0 && (
+          {messages.length > 0 && !isStreaming && (
             <div className="px-3 pb-1.5">
               <div className="flex gap-1 overflow-x-auto no-scrollbar">
                 {defaultQuickActions.map(qa => (
@@ -325,16 +299,17 @@ export function ContextualAssistant({ entityType, entityId, entityTitle, quickAc
                 type="text"
                 value={input}
                 onChange={e => setInput(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && sendMessage(input)}
-                placeholder="Ask about this record..."
-                className="flex-1 h-7 rounded border border-border-subtle bg-surface-raised px-2 text-[11px] text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+                onKeyDown={e => e.key === 'Enter' && !isStreaming && sendMessage(input)}
+                placeholder={isStreaming ? 'Thinking...' : 'Ask about this record...'}
+                disabled={isStreaming}
+                className="flex-1 h-7 rounded border border-border-subtle bg-surface-raised px-2 text-[11px] text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-60"
               />
               <button
                 onClick={() => sendMessage(input)}
-                disabled={!input.trim()}
+                disabled={!input.trim() || isStreaming}
                 className="h-7 px-2 rounded bg-accent text-white hover:bg-accent-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                <Send className="w-3 h-3" />
+                {isStreaming ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
               </button>
             </div>
           </div>

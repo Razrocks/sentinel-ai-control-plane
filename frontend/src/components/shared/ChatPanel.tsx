@@ -18,8 +18,10 @@ import {
   HelpCircle,
   Wrench,
   KeyRound,
+  Loader2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { chatStream } from '@/lib/api'
 import { useRole, type Role } from '@/lib/roles'
 
 type MessageType =
@@ -203,43 +205,6 @@ const roleQuickActions: Record<Role, Record<string, QuickAction[]>> = {
   },
 }
 
-// Role-specific mock responses
-const roleResponses: Record<Role, { content: string; type: MessageType; actionResult?: ActionResult }[]> = {
-  operator: [
-    { type: 'explanation', content: 'Based on the current queue, CHG-2024-0851 (schema migration) is the highest priority — it\'s escalated with a high blast radius affecting 5 services. I recommend reviewing the blast radius tab before routing for approval.' },
-    { type: 'recommendation', content: 'I\'d suggest triaging INC-2024-1205 next. The connection pool issue on payment-service is recurring and has a safe config-only fix available. You can draft the remediation and escalate for approval.' },
-    { type: 'action_result', content: 'Triage assessment complete.', actionResult: { decision: 'escalate', summary: 'High blast radius detected. Routing to senior engineer for review.', policyRule: 'blast-radius-threshold' } },
-    { type: 'guardrail', content: 'You don\'t have permission to approve this directly. I\'ve prepared the assessment — route it to an Approver for sign-off.' },
-  ],
-  approver: [
-    { type: 'explanation', content: 'This access request for daniel.kwon → orders-db (read_write) is pending your approval. The entitlement check passed, and the policy requires manager sign-off for database write access.' },
-    { type: 'recommendation', content: 'I recommend approving the schema migration (CHG-2024-0851) with conditions: require a maintenance window and confirm the backfill can be paused. The blast radius is high but the rollback plan exists.' },
-    { type: 'action_result', content: 'Approval evaluation complete.', actionResult: { decision: 'allow', summary: 'All policy checks passed. Entitlement verified. Manager approval is the final gate.', policyRule: 'dual-approval-prod-access' } },
-  ],
-  engineer: [
-    { type: 'explanation', content: 'The blast radius for this schema migration shows 5 affected systems. The order-api and orders-db are critical dependencies. CI is currently failing on the migration — the NOT NULL constraint needs the backfill to complete first.' },
-    { type: 'code_snippet', content: '```sql\n-- Migration: Add NOT NULL constraint\nALTER TABLE orders\n  ALTER COLUMN customer_id\n  SET NOT NULL;\n\n-- Backfill required first:\nUPDATE orders\n  SET customer_id = fallback_lookup(order_id)\n  WHERE customer_id IS NULL;\n-- Estimated: ~1.2M rows\n```\n\nThe backfill must complete before the constraint can be applied. I\'d recommend running it in batches of 1000.' },
-    { type: 'recommendation', content: 'Run a simulation first. The migration involves 1.2M rows and the backfill strategy should be validated in staging before requesting production approval.' },
-    { type: 'draft_artifact', content: '**PR Description Draft:**\n\n## What\nAdd NOT NULL constraint to `orders.customer_id`\n\n## Why\nEnforce referential integrity after backfill migration\n\n## Blast Radius\n- order-api (direct)\n- orders-db (schema change)\n- payment-service, analytics-pipeline (downstream)\n\n## Rollback\n`ALTER TABLE orders ALTER COLUMN customer_id DROP NOT NULL`' },
-  ],
-  it_support: [
-    { type: 'explanation', content: 'INC-2024-1205 is a connection pool exhaustion on payment-service. This is a recurring issue — KB-4521 has the standard fix. The recommended remediation is a config-only change to increase pool size from 20 to 40.' },
-    { type: 'recommendation', content: 'The fix is safe to trigger — it\'s a config-only change that requires a rolling restart. No maintenance window needed. I can draft the remediation response for the requester.' },
-    { type: 'action_result', content: 'Remediation check complete.', actionResult: { decision: 'allow', summary: 'Config-only change. Safe remediation path confirmed. No code changes required.', policyRule: 'safe-remediation-auto-propose' } },
-    { type: 'draft_artifact', content: '**Customer Response Draft:**\n\nWe\'ve identified the root cause as connection pool exhaustion on payment-service. Our team is increasing the HikariCP max-pool-size from 20 to 40. This is a rolling restart with no downtime expected.\n\nETA for resolution: 30 minutes.\n\nWe\'ll update this ticket once the fix has been applied and verified.' },
-  ],
-  access_approver: [
-    { type: 'explanation', content: 'This access request is for daniel.kwon requesting read_write access to orders-db (PostgreSQL). The entitlement check passed — the user is on the order-api team. Manager approval has been obtained. As system owner, your approval is the final gate.' },
-    { type: 'recommendation', content: 'I recommend approving with a 90-day time-bound. The user has a legitimate business need and the entitlement policy is satisfied. No prior access violations on record.' },
-    { type: 'action_result', content: 'Entitlement evaluation complete.', actionResult: { decision: 'allow', summary: 'User eligible. Manager approved. Entitlement check passed. System owner approval is the final step.', policyRule: 'system-owner-approval' } },
-    { type: 'guardrail', content: 'Manager approval has not been received yet. You cannot approve this request until the manager chain clears. The policy requires manager sign-off before system owner approval.' },
-  ],
-  admin: [
-    { type: 'explanation', content: 'Full system status: 4 active incidents (1 sev2), 5 pending approvals, 2 access requests awaiting action. The production-write-guard policy blocked 1 execution today. All connectors are healthy.' },
-    { type: 'policy_rationale', content: 'The "production-write-guard" policy blocked direct execution of CHG-2024-0851 because it\'s a schema migration with blast radius > 3 services. This requires the "controlled_apply" execution mode with dual approval.' },
-    { type: 'action_result', content: 'System audit complete.', actionResult: { decision: 'allow', summary: 'All policy engines online. 8 active rules. 2 escalation rules triggered in the last 24h.', policyRule: 'system-health-check' } },
-  ],
-}
 
 const typeIcons: Record<MessageType, typeof Lightbulb> = {
   text: MessageSquare,
@@ -276,9 +241,11 @@ export function ChatPanel() {
   const [isExpanded, setIsExpanded] = useState(false)
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
+  const [isStreaming, setIsStreaming] = useState(false)
   const { role, config } = useRole()
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
+  const abortRef = useRef<AbortController | null>(null)
 
   const currentPath = window.location.pathname
   const basePath = '/' + (currentPath.split('/')[1] || '')
@@ -300,10 +267,13 @@ export function ChatPanel() {
 
   useEffect(() => {
     setMessages([])
+    // Abort any in-flight stream on role change
+    abortRef.current?.abort()
+    setIsStreaming(false)
   }, [role])
 
-  const sendMessage = (text: string) => {
-    if (!text.trim()) return
+  const sendMessage = async (text: string) => {
+    if (!text.trim() || isStreaming) return
 
     const userMsg: Message = {
       id: `msg-${Date.now()}`,
@@ -313,20 +283,59 @@ export function ChatPanel() {
       type: 'text',
     }
 
-    const responses = roleResponses[role] || roleResponses.admin
-    const response = responses[Math.floor(Math.random() * responses.length)]
+    const assistantMsgId = `msg-${Date.now() + 1}`
     const assistantMsg: Message = {
-      id: `msg-${Date.now() + 1}`,
+      id: assistantMsgId,
       role: 'assistant',
-      content: response.content,
+      content: '',
       timestamp: new Date(),
-      type: response.type,
-      actionResult: response.actionResult,
+      type: 'text',
     }
 
     setMessages(prev => [...prev, userMsg, assistantMsg])
     setInput('')
+    setIsStreaming(true)
     if (!isExpanded) setIsExpanded(true)
+
+    // Build message history for API (all prior messages + the new user message)
+    const allMessages = [...messages, userMsg].map(m => ({
+      role: m.role as 'user' | 'assistant',
+      content: m.content,
+    }))
+
+    const controller = await chatStream(
+      allMessages,
+      { pagePath: currentPath },
+      // onChunk — append text to the assistant message
+      (chunk) => {
+        setMessages(prev =>
+          prev.map(m =>
+            m.id === assistantMsgId
+              ? { ...m, content: m.content + chunk }
+              : m
+          )
+        )
+      },
+      // onDone
+      () => {
+        setIsStreaming(false)
+        abortRef.current = null
+      },
+      // onError
+      (err) => {
+        setMessages(prev =>
+          prev.map(m =>
+            m.id === assistantMsgId
+              ? { ...m, content: `Error: ${err}` }
+              : m
+          )
+        )
+        setIsStreaming(false)
+        abortRef.current = null
+      },
+    )
+
+    abortRef.current = controller
   }
 
   const handleSend = () => sendMessage(input)
@@ -497,16 +506,17 @@ export function ChatPanel() {
                 type="text"
                 value={input}
                 onChange={e => setInput(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && handleSend()}
-                placeholder={`Ask Sentinel (${guardrail.label})...`}
-                className="flex-1 h-9 rounded-md border border-border-subtle bg-surface-raised px-3 text-sm text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent"
+                onKeyDown={e => e.key === 'Enter' && !isStreaming && handleSend()}
+                placeholder={isStreaming ? 'Sentinel is thinking...' : `Ask Sentinel (${guardrail.label})...`}
+                disabled={isStreaming}
+                className="flex-1 h-9 rounded-md border border-border-subtle bg-surface-raised px-3 text-sm text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-60"
               />
               <button
                 onClick={handleSend}
-                disabled={!input.trim()}
+                disabled={!input.trim() || isStreaming}
                 className="h-9 px-3 rounded-md bg-accent text-white hover:bg-accent-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                <Send className="w-4 h-4" />
+                {isStreaming ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
               </button>
             </div>
           </div>

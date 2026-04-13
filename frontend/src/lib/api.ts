@@ -35,6 +35,103 @@ export async function apiFetch<T>(path: string, options?: RequestInit): Promise<
   return res.json()
 }
 
+// ─── Streaming chat helper ──────────────────────────────
+
+export interface ChatContext {
+  pagePath: string
+  entityType?: 'change' | 'incident' | 'access_request'
+  entityId?: string
+}
+
+export async function chatStream(
+  messages: Array<{ role: 'user' | 'assistant'; content: string }>,
+  context: ChatContext,
+  onChunk: (text: string) => void,
+  onDone: () => void,
+  onError: (err: string) => void,
+): Promise<AbortController> {
+  const controller = new AbortController()
+  const token = _getToken?.()
+
+  try {
+    const res = await fetch(`${API_BASE}/chat`, {
+      method: 'POST',
+      credentials: 'include',
+      signal: controller.signal,
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ messages, context }),
+    })
+
+    if (!res.ok) {
+      const text = await res.text().catch(() => res.statusText)
+      onError(text)
+      return controller
+    }
+
+    const reader = res.body?.getReader()
+    if (!reader) {
+      onError('No response body')
+      return controller
+    }
+
+    const decoder = new TextDecoder()
+    let buffer = ''
+
+    const pump = async () => {
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+
+        buffer += decoder.decode(value, { stream: true })
+
+        // Parse SSE lines from buffer
+        const lines = buffer.split('\n')
+        buffer = lines.pop() || '' // Keep incomplete last line in buffer
+
+        let currentEvent = ''
+        for (const line of lines) {
+          if (line.startsWith('event: ')) {
+            currentEvent = line.slice(7).trim()
+          } else if (line.startsWith('data: ')) {
+            const data = line.slice(6)
+            try {
+              const parsed = JSON.parse(data)
+              if (currentEvent === 'chunk' && parsed.content) {
+                onChunk(parsed.content)
+              } else if (currentEvent === 'done') {
+                onDone()
+                return
+              } else if (currentEvent === 'error') {
+                onError(parsed.message || 'Stream error')
+                return
+              }
+            } catch {
+              // Ignore parse errors for heartbeats etc.
+            }
+          }
+        }
+      }
+      // Stream ended without explicit done event
+      onDone()
+    }
+
+    pump().catch((err) => {
+      if (err.name !== 'AbortError') {
+        onError(err.message || 'Stream read error')
+      }
+    })
+  } catch (err: unknown) {
+    if (err instanceof Error && err.name !== 'AbortError') {
+      onError(err.message || 'Failed to connect')
+    }
+  }
+
+  return controller
+}
+
 // Typed API functions for each resource
 
 import type {

@@ -12,6 +12,7 @@ import { policiesRoutes } from './routes/policies.js'
 import { settingsRoutes } from './routes/settings.js'
 import { authRoutes } from './routes/auth.js'
 import { actionsRoutes } from './routes/actions.js'
+import { chatRoutes } from './routes/chat.js'
 
 const app = Fastify({
   logger: {
@@ -55,6 +56,7 @@ await app.register(auditRoutes)
 await app.register(policiesRoutes)
 await app.register(settingsRoutes)
 await app.register(actionsRoutes)
+await app.register(chatRoutes)
 
 // ─── Health check ────────────────────────────────────────
 app.get('/api/health', async () => {

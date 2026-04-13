@@ -1,0 +1,198 @@
+import Anthropic from '@anthropic-ai/sdk'
+import { config } from '../config.js'
+
+// ─── Anthropic client singleton ─────────────────────────
+let _client: Anthropic | null = null
+
+function getClient(): Anthropic {
+  if (!_client) {
+    if (!config.anthropicApiKey) {
+      throw new Error('ANTHROPIC_API_KEY is not configured')
+    }
+    _client = new Anthropic({ apiKey: config.anthropicApiKey })
+  }
+  return _client
+}
+
+// ─── Role guardrails ────────────────────────────────────
+
+const roleGuardrails: Record<string, { label: string; description: string; allowed: string[]; blocked: string[] }> = {
+  operator: {
+    label: 'Operator',
+    description: 'Change review, release readiness, escalation, controlled execution',
+    allowed: ['Assess and triage changes/incidents', 'Draft recommendations', 'Escalate to reviewers', 'Simulate changes', 'Route for approval'],
+    blocked: ['Cannot approve or deny requests', 'Cannot execute changes directly', 'Cannot grant access', 'Cannot override policies'],
+  },
+  engineer: {
+    label: 'Engineer',
+    description: 'Impact analysis, code review, patch generation, technical implementation',
+    allowed: ['Analyze blast radius and code impact', 'Simulate changes', 'Generate patches and PRs', 'Inspect execution results'],
+    blocked: ['Cannot approve changes', 'Cannot deploy to production directly', 'Cannot grant access'],
+  },
+  it_support: {
+    label: 'IT Support',
+    description: 'Incidents, service requests, KB remediation, safe operational fixes',
+    allowed: ['Triage incidents', 'Draft responses and work notes', 'Trigger safe remediations', 'Link KB articles', 'Route and escalate'],
+    blocked: ['Cannot approve requests', 'Cannot execute high-risk fixes', 'Cannot grant access', 'Cannot modify protected systems'],
+  },
+  approver: {
+    label: 'Approver',
+    description: 'Reviews changes, access requests, remediation approvals',
+    allowed: ['Approve or deny requests', 'Approve with conditions', 'Request additional information', 'Review evidence'],
+    blocked: ['Cannot execute changes (execution is system-handled)', 'Cannot edit policies', 'Cannot self-approve own requests'],
+  },
+  access_approver: {
+    label: 'Access Approver',
+    description: 'System owner — approves access to specific systems, roles, entitlements',
+    allowed: ['Approve or deny access requests for owned systems', 'Review entitlement eligibility', 'Request additional information'],
+    blocked: ['Cannot bypass manager approval chain', 'Cannot modify entitlement rules', 'Cannot execute changes'],
+  },
+  admin: {
+    label: 'Admin',
+    description: 'Guardrails, integrations, policy bundles, governance configuration',
+    allowed: ['All actions available', 'Manage policies and integrations', 'Override with audit trail', 'Review governance metrics'],
+    blocked: ['Cannot bypass audit trail', 'All production actions still require controlled execution mode'],
+  },
+}
+
+// ─── Page context descriptions ──────────────────────────
+
+const pageContextMap: Record<string, string> = {
+  '/': 'The main dashboard showing an overview of changes, incidents, access requests, approvals, and audit activity.',
+  '/changes': 'The changes list page showing all infrastructure/deployment changes with their risk levels, statuses, and approval states.',
+  '/incidents': 'The incidents list page showing operational incidents with their severity, status, and assigned teams.',
+  '/access-requests': 'The access requests list page showing permission requests with their risk levels, approval status, and entitlement checks.',
+  '/approvals': 'The approvals inbox showing items pending the current user\'s approval decision (approve, deny, or approve with conditions).',
+  '/audit': 'The audit trail page showing all decision and action history with policy evaluations, blocks, and escalations.',
+  '/policies': 'The policy rules page showing all governance rules, their bundles, decisions, scopes, and active status.',
+  '/settings': 'The settings page showing integration status, connector health, and system configuration.',
+}
+
+// ─── System prompt builders ─────────────────────────────
+
+export function buildChatSystemPrompt(role: string, pagePath: string): string {
+  const guardrail = roleGuardrails[role] || roleGuardrails.operator
+  const basePath = '/' + (pagePath.split('/')[1] || '')
+  const pageDesc = pageContextMap[basePath] || 'a page in the Sentinel control plane'
+
+  return `You are Sentinel, an AI assistant embedded in an operational control plane for managing infrastructure changes, incidents, access requests, and policy governance.
+
+## Your Role
+You assist the current user who has the role of **${guardrail.label}** (${guardrail.description}).
+
+## Role Permissions
+What this user CAN do:
+${guardrail.allowed.map(a => `- ${a}`).join('\n')}
+
+What this user CANNOT do:
+${guardrail.blocked.map(b => `- ${b}`).join('\n')}
+
+IMPORTANT: Never suggest actions the user's role cannot perform. If they ask about something outside their permissions, explain what role is needed and suggest the appropriate escalation path.
+
+## Current Context
+The user is viewing: ${pageDesc}
+
+## Response Guidelines
+- Be concise and action-oriented. Prefer short paragraphs over long walls of text.
+- Reference specific policy rules, risk levels, and approval states when relevant.
+- When recommending actions, be specific: name the action, who should do it, and why.
+- If the user asks about a specific entity (change, incident, access request), provide actionable advice based on their role.
+- Use markdown formatting for readability (bold for emphasis, bullet lists for options, code blocks for technical details).
+- Do not hallucinate entity IDs, ticket numbers, or data you don't have. If you lack specific information, say so and suggest how to find it.`
+}
+
+export function buildContextualSystemPrompt(
+  role: string,
+  entityType: string,
+  entityData: Record<string, unknown>,
+): string {
+  const guardrail = roleGuardrails[role] || roleGuardrails.operator
+
+  let entityInstructions = ''
+
+  switch (entityType) {
+    case 'change':
+      entityInstructions = `## Entity: Infrastructure Change
+You have full details about this change below. When answering questions:
+- Assess risk based on the blast radius, affected services, and environment
+- Consider the approval chain status and what's still pending
+- Reference the CI status, linked PRs, and maintenance window if relevant
+- For operators: focus on triage, routing, and escalation recommendations
+- For engineers: focus on technical impact, code changes, and simulation advice
+- For approvers: focus on whether to approve, deny, or request more info`
+      break
+
+    case 'incident':
+      entityInstructions = `## Entity: Operational Incident
+You have full details about this incident below. When answering questions:
+- Assess severity and whether it's a recurring issue
+- Reference related changes, CI items, and KB articles
+- Suggest root cause analysis based on the likely issue type and root cause category
+- For IT Support: focus on triage, KB-based fixes, and customer communication
+- For engineers: focus on root cause analysis and code-level fixes
+- For operators: focus on escalation paths and remediation routing`
+      break
+
+    case 'access_request':
+      entityInstructions = `## Entity: Access Request
+You have full details about this access request below. When answering questions:
+- Check the entitlement status and approval chain
+- Reference the policy decision and risk level
+- Indicate which approvals are still pending (manager, system owner)
+- For access approvers: focus on eligibility, risk, and whether to approve
+- For IT support: focus on routing and eligibility verification
+- For operators: focus on routing to the correct approver chain`
+      break
+  }
+
+  return `You are Sentinel, an AI assistant embedded in an operational control plane for managing infrastructure changes, incidents, access requests, and policy governance.
+
+## Your Role
+You assist the current user who has the role of **${guardrail.label}** (${guardrail.description}).
+
+## Role Permissions
+What this user CAN do:
+${guardrail.allowed.map(a => `- ${a}`).join('\n')}
+
+What this user CANNOT do:
+${guardrail.blocked.map(b => `- ${b}`).join('\n')}
+
+IMPORTANT: Never suggest actions the user's role cannot perform. If they ask about something outside their permissions, explain what role is needed and suggest the appropriate escalation path.
+
+${entityInstructions}
+
+## Entity Data
+\`\`\`json
+${JSON.stringify(entityData, null, 2)}
+\`\`\`
+
+## Response Guidelines
+- Be concise and action-oriented. Reference the actual data provided above.
+- Cite specific field values (ticket IDs, risk levels, service names, approval statuses) from the entity data.
+- When recommending actions, be specific: name the action, who should do it, and why.
+- Use markdown formatting for readability.
+- Do not make up information not present in the entity data. If something is missing, say so.`
+}
+
+// ─── Stream chat ────────────────────────────────────────
+
+export function streamChat(
+  systemPrompt: string,
+  messages: Array<{ role: 'user' | 'assistant'; content: string }>,
+) {
+  const client = getClient()
+
+  return client.messages.stream({
+    model: 'claude-sonnet-4-20250514',
+    max_tokens: 1024,
+    system: systemPrompt,
+    messages: messages.map(m => ({
+      role: m.role,
+      content: m.content,
+    })),
+  })
+}
+
+export function isConfigured(): boolean {
+  return !!config.anthropicApiKey
+}

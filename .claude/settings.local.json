@@ -29,7 +29,14 @@
       "Bash(psql -h localhost -p 5432 -U sentinel -d sentinel -c \"SELECT 1\")",
       "Bash(psql -h localhost -p 5432 -U postgres -c \"\\\\l\")",
       "Bash(taskkill //F //IM \"tsx.exe\")",
-      "Bash(taskkill //F //IM \"node.exe\" //FI \"WINDOWTITLE eq *server*\")"
+      "Bash(taskkill //F //IM \"node.exe\" //FI \"WINDOWTITLE eq *server*\")",
+      "Bash(node -e ':*)",
+      "Bash(curl -s -X POST http://localhost:3001/api/chat -H 'Content-Type: application/json' -d '{\"messages\":[{\"role\":\"user\",\"content\":\"test\"}],\"context\":{\"pagePath\":\"/\"}}')",
+      "Bash(npx tsx *)",
+      "Bash(echo \"PID: $!\")",
+      "Bash(git ls-remote *)",
+      "Bash(xargs grep *)",
+      "Bash(pg_isready -h localhost -p 5432)"
     ]
   }
 }

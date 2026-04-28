@@ -1,0 +1,262 @@
+/**
+ * Shared types for the skills system (Phase 8).
+ *
+ * A "skill" is a single-purpose, prompt-driven unit of advisory work.
+ * Skills do not write to the database directly. They produce structured
+ * output that a calling service persists.
+ *
+ * Every agentic skill invocation writes one row to `agent_invocations`
+ * (provenance contract). Deterministic skills do not.
+ */
+
+import type { ZodSchema } from 'zod'
+
+// ─── Skill kinds ────────────────────────────────────────
+
+export type SkillKind = 'agentic' | 'deterministic' | 'integration'
+
+// ─── Skill names (closed set, v1) ───────────────────────
+
+export const SKILL_NAMES = [
+  'assess_change',
+  'analyze_blast_radius',
+  'triage_incident',
+  'evaluate_access_request',
+  'support_approval_decision',
+  'route_request',
+  'propose_bounded_remediation',
+  'draft_approval_packet',
+  'draft_work_note',
+  'draft_customer_response',
+  'explain_policy_decision',
+  'summarize_decision_impact',
+] as const
+
+export type SkillName = (typeof SKILL_NAMES)[number]
+
+// ─── Context tier inputs ────────────────────────────────
+
+/**
+ * Identity & immutable framing — Sentinel's hard constraints.
+ * Same string every call; cacheable.
+ */
+export interface T1aIdentity {
+  systemRole: 'sentinel'
+  hardConstraints: string[]
+}
+
+/**
+ * Active policy bundle — the currently in-force rules.
+ * Cached per bundle version.
+ */
+export interface T1bPolicyBundle {
+  bundleVersion: string
+  rules: Array<{
+    name: string
+    description: string
+    bundle: string
+    decision: string
+    scope: string
+    appliesTo: string[]
+  }>
+  activeFreezes: Array<{
+    id: string
+    label: string
+    scope: string
+    startsAt: string
+    endsAt: string
+    affectsServices: string[]
+  }>
+}
+
+/**
+ * Role-aware constraints for the acting user.
+ * Cached per role.
+ */
+export interface T1cRoleConstraints {
+  role: string
+  label: string
+  description: string
+  allowed: string[]
+  blocked: string[]
+}
+
+/**
+ * Org & service catalog — user directory, manager hierarchy, service catalog,
+ * team directory, approver registry. Used by chat-style skills for ownership/
+ * contact-routing answers.
+ */
+export interface T1dOrgCatalog {
+  users: Array<{
+    id: string
+    name: string
+    email: string
+    role: string
+    team: string
+    managerId: string | null
+    systemsOwned: string[]
+  }>
+  services: Record<
+    string,
+    {
+      team: string
+      criticality: 'critical' | 'high' | 'medium' | 'low'
+      ownerUserIds: string[]
+      downstream: string[]
+    }
+  >
+  approverRegistry: Record<string, string[]>
+}
+
+/**
+ * Skill registry meta — names + descriptions of available skills,
+ * for skills that need to suggest follow-up actions.
+ */
+export interface T1eSkillRegistry {
+  skills: Array<{ name: string; purpose: string }>
+}
+
+/**
+ * Composite T1 — all five sub-tiers. Skills opt in to which they need.
+ */
+export interface T1Context {
+  identity?: T1aIdentity
+  policyBundle?: T1bPolicyBundle
+  roleConstraints?: T1cRoleConstraints
+  orgCatalog?: T1dOrgCatalog
+  skillRegistry?: T1eSkillRegistry
+}
+
+/**
+ * T2 — the focal entity for this invocation.
+ * Skills receive the entity in their input; T2 here is the "extra" relations
+ * the runner pre-loaded (PR summaries, recent deploys, prior work notes, etc.).
+ */
+export interface T2Context {
+  recentDeploysOnService?: Array<{
+    ticketId: string
+    deployedAt: string
+    result: string
+  }>
+  recentIncidentsOnService?: Array<{
+    incidentId: string
+    rootCauseCategory: string
+    resolvedAt: string
+  }>
+  prSummaries?: Array<{
+    url: string
+    title: string
+    filesChanged: number
+    additions: number
+    deletions: number
+  }>
+  candidateKbArticles?: Array<{ id: string; title: string; snippet: string }>
+  priorWorkNotes?: Array<{ at: string; author: string; note: string }>
+}
+
+/**
+ * T4 — slice of recent audit history relevant to the skill's question.
+ * E.g. last N events on the same service for incident triage.
+ */
+export interface T4Context {
+  recentAuditEvents?: Array<{
+    timestamp: string
+    actor: string
+    action: string
+    objectId: string
+    result: string
+  }>
+}
+
+/**
+ * T5 — temporal facts. "Now" + active windows + time-since for relative phrasing.
+ */
+export interface T5Context {
+  now: string
+  activeFreezes?: Array<{
+    id: string
+    label: string
+    endsAt: string
+  }>
+  notes?: string
+}
+
+// ─── Composite skill context ────────────────────────────
+
+export interface SkillContext {
+  /** Acting user (for provenance). 'system' for autonomous skills. */
+  actor: string
+  /** Trace ID for cross-skill correlation. */
+  traceId?: string
+  t1?: T1Context
+  t2?: T2Context
+  t4?: T4Context
+  t5?: T5Context
+}
+
+// ─── Skill spec ─────────────────────────────────────────
+
+/**
+ * A SkillSpec is the registered definition of a single skill.
+ * The runner uses it to validate input, build the prompt, call the model,
+ * and validate output.
+ */
+export interface SkillSpec<TInput = unknown, TOutput = unknown> {
+  name: SkillName
+  kind: SkillKind
+  /** Anthropic model ID, e.g. "claude-sonnet-4-20250514". */
+  model: string
+  temperature: number
+  maxInputTokens: number
+  maxOutputTokens: number
+  /** Zod schema for the input payload. Failures → validation_failed before any model call. */
+  inputSchema: ZodSchema<TInput>
+  /** Zod schema for the parsed JSON output. Failures → validation_failed after the model call. */
+  outputSchema: ZodSchema<TOutput>
+  /** Audit action string emitted on the linked entity (per spec). */
+  auditAction: string
+  /** Human-readable purpose, surfaced via T1.e to other skills. */
+  purpose: string
+  /**
+   * Build the system prompt + user message from input + context.
+   * The runner hashes the joined prompt to populate `prompt_hash`.
+   */
+  buildPrompt: (input: TInput, ctx: SkillContext) => {
+    system: string
+    user: string
+  }
+}
+
+// ─── Runner result ──────────────────────────────────────
+
+export type RunnerStatus = 'success' | 'validation_failed' | 'error'
+
+export interface RunnerResult<TOutput = unknown> {
+  status: RunnerStatus
+  /** Parsed, schema-validated output. Only set when status === 'success'. */
+  output?: TOutput
+  /** Raw model text, for debugging when validation fails. */
+  rawOutput?: string
+  /** Error message when status !== 'success'. */
+  errorMessage?: string
+  /** Provenance row id (if written). */
+  invocationId?: string
+  /** Token + latency metrics (best-effort). */
+  metrics: {
+    tokensIn: number
+    tokensOut: number
+    latencyMs: number
+    cached: boolean
+  }
+  /** Confidence the skill self-reported, if any. */
+  confidence?: number
+}
+
+// ─── Runner options ─────────────────────────────────────
+
+export interface RunSkillOptions {
+  /** Override the actor for this single call (default: ctx.actor). */
+  actor?: string
+  /** If true, the runner skips writing to agent_invocations. Used for tests. */
+  skipProvenance?: boolean
+}

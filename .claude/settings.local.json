@@ -36,7 +36,8 @@
       "Bash(echo \"PID: $!\")",
       "Bash(git ls-remote *)",
       "Bash(xargs grep *)",
-      "Bash(pg_isready -h localhost -p 5432)"
+      "Bash(pg_isready -h localhost -p 5432)",
+      "Bash(echo \"EXIT: $?\")"
     ]
   }
 }

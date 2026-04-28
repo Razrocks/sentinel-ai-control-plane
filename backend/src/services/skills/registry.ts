@@ -1,0 +1,490 @@
+/**
+ * Skill registry — single source of truth for the 12 v1 skills.
+ *
+ * Each entry binds:
+ *   - the skill's name and kind (agentic / deterministic / integration)
+ *   - the model + temperature + token budget per its skill.md spec
+ *   - input + output Zod schemas (from schemas.ts)
+ *   - a `buildPrompt` closure that composes the system prompt from context
+ *     tiers and renders the input as the user message
+ *   - the audit action string the calling service should emit
+ *
+ * The runner (runner.ts) consumes SkillSpec entries via `getSkill(name)`.
+ */
+
+import type { SkillName, SkillSpec, SkillContext } from './types.js'
+import { buildSystemPrompt, renderInputAsJson } from './prompt.js'
+import * as S from './schemas.js'
+
+// ─── Helpers ────────────────────────────────────────────
+
+function makeBuildPrompt<T>(taskInstructions: string, opts?: {
+  excludePolicy?: boolean
+  excludeRole?: boolean
+  excludeOrgCatalog?: boolean
+  excludeT4?: boolean
+  excludeT5?: boolean
+  servicesFilter?: (input: T) => string[] | undefined
+}) {
+  return (input: T, ctx: SkillContext) => {
+    const orgCatalogServices = opts?.servicesFilter ? opts.servicesFilter(input) : undefined
+    const system = buildSystemPrompt(ctx, {
+      includePolicy: !opts?.excludePolicy,
+      includeRole: !opts?.excludeRole,
+      includeOrgCatalog: !opts?.excludeOrgCatalog,
+      orgCatalogServices,
+      includeT4: !opts?.excludeT4,
+      includeT5: !opts?.excludeT5,
+      taskInstructions,
+    })
+    const user = renderInputAsJson(input)
+    return { system, user }
+  }
+}
+
+// ─── Skill specs ────────────────────────────────────────
+
+const assess_change: SkillSpec<S.AssessChangeInput, S.AssessChangeOutput> = {
+  name: 'assess_change',
+  kind: 'agentic',
+  model: 'claude-sonnet-4-20250514',
+  temperature: 0.1,
+  maxInputTokens: 6000,
+  maxOutputTokens: 600,
+  inputSchema: S.AssessChangeInput,
+  outputSchema: S.AssessChangeOutput,
+  auditAction: 'change_assessed',
+  purpose:
+    'Classify the risk of a change (critical/high/medium/low) with a 1-2 sentence summary, ' +
+    '2-4 sentence rationale, confidence, and contributing signals. Advisory only.',
+  buildPrompt: makeBuildPrompt<S.AssessChangeInput>(
+    [
+      'Classify the risk of this change as exactly one of: critical, high, medium, low.',
+      'Provide:',
+      '- summary: 1-2 sentences in plain English',
+      '- riskRationale: 2-4 sentences explaining the chosen risk class',
+      '- confidence: 0.0–1.0',
+      '- signals: list of {kind, severity, note}',
+      '',
+      'Risk class definitions:',
+      '- critical: production data loss possible; affects multiple services; no rollback; or schema change with active traffic.',
+      '- high: production write to a critical service; large blast radius; in-flight during freeze; or risky rollback.',
+      '- medium: production write to non-critical service with rollback; staging change with broad impact; or known-fragile area.',
+      '- low: read-only; staging-only; or contained-blast configuration change with rollback.',
+    ].join('\n'),
+    {
+      servicesFilter: (input) => [input.change.service],
+    },
+  ),
+}
+
+const analyze_blast_radius: SkillSpec<
+  S.AnalyzeBlastRadiusInput,
+  S.AnalyzeBlastRadiusOutput
+> = {
+  name: 'analyze_blast_radius',
+  kind: 'agentic',
+  model: 'claude-sonnet-4-20250514',
+  temperature: 0.1,
+  maxInputTokens: 7000,
+  maxOutputTokens: 1500,
+  inputSchema: S.AnalyzeBlastRadiusInput,
+  outputSchema: S.AnalyzeBlastRadiusOutput,
+  auditAction: 'blast_radius_computed',
+  purpose:
+    'Filter, classify, and explain a deterministic discovery output: for each candidate, ' +
+    'decide if it is genuinely affected by the change and produce a confidence + criticality + reason.',
+  buildPrompt: makeBuildPrompt<S.AnalyzeBlastRadiusInput>(
+    [
+      'For each candidate in the input, decide:',
+      '1. Is it genuinely affected by the change? Place it in `items` or `excluded`.',
+      '2. If `items`: classify confidence (high/medium/low) and criticality (critical/high/medium/low).',
+      '   Confidence is YOUR confidence the change touches it.',
+      '   Criticality is the candidate\'s own importance.',
+      '3. Write a 1-sentence `reason` and 2-3 sentence `details`.',
+      '',
+      'Do NOT invent candidates. Every input candidate must appear in items or excluded.',
+      'items.length + excluded.length must equal candidates.length.',
+    ].join('\n'),
+    {
+      servicesFilter: (input) => [input.change.service],
+      excludeT5: true,
+    },
+  ),
+}
+
+const triage_incident: SkillSpec<S.TriageIncidentInput, S.TriageIncidentOutput> = {
+  name: 'triage_incident',
+  kind: 'agentic',
+  model: 'claude-sonnet-4-20250514',
+  temperature: 0.1,
+  maxInputTokens: 6000,
+  maxOutputTokens: 700,
+  inputSchema: S.TriageIncidentInput,
+  outputSchema: S.TriageIncidentOutput,
+  auditAction: 'incident_triaged',
+  purpose:
+    'Triage an incident: revise severity if needed, identify likely issue type and root cause category, ' +
+    'recommend a fix advisory, score KB candidate relevance, and surface correlated recent changes.',
+  buildPrompt: makeBuildPrompt<S.TriageIncidentInput>(
+    [
+      'Triage this incident. Decide:',
+      '- severity: revise if intake is wrong (sev1–sev4)',
+      '- severityChanged: true if your severity differs from intake',
+      '- severityRationale: 1-2 sentences',
+      '- likelyIssueType: free text',
+      '- rootCauseCategory: deploy-correlated | infra | data | config | external-dependency | unknown',
+      '- recommendedFix: advisory, 1-2 sentences',
+      '- kbArticles: relevance per candidate (use only candidates from input)',
+      '- relatedChanges: ranked ticketIds (only those visible in input)',
+      '- isRecurring: confirmed or refuted',
+      '- confidence: 0.0–1.0',
+    ].join('\n'),
+    {
+      servicesFilter: (input) => [input.incident.affectedService],
+      excludeRole: true,
+    },
+  ),
+}
+
+const evaluate_access_request: SkillSpec<
+  S.EvaluateAccessRequestInput,
+  S.EvaluateAccessRequestOutput
+> = {
+  name: 'evaluate_access_request',
+  kind: 'agentic',
+  model: 'claude-sonnet-4-20250514',
+  temperature: 0.1,
+  maxInputTokens: 5000,
+  maxOutputTokens: 500,
+  inputSchema: S.EvaluateAccessRequestInput,
+  outputSchema: S.EvaluateAccessRequestOutput,
+  auditAction: 'access_evaluated',
+  purpose:
+    'Evaluate an access request: produce a risk classification, justification quality, narrative, ' +
+    'flags, and recommended time-bound. Does not decide entitlement.',
+  buildPrompt: makeBuildPrompt<S.EvaluateAccessRequestInput>(
+    [
+      'Evaluate this access request:',
+      '1. riskLevel: consider system tier × role privilege × requester history × freeze',
+      '2. justificationQuality: strong / adequate / weak / insufficient',
+      '3. narrative: 3-5 sentences for the human approvers',
+      '4. flags: surface concerns (kind, severity, note)',
+      '5. recommendedTimeBound: ISO 8601 duration (e.g. P30D) or null',
+      '6. confidence: 0.0–1.0',
+    ].join('\n'),
+    {
+      servicesFilter: (input) => [input.request.requestedSystem],
+    },
+  ),
+}
+
+const support_approval_decision: SkillSpec<
+  S.SupportApprovalDecisionInput,
+  S.SupportApprovalDecisionOutput
+> = {
+  name: 'support_approval_decision',
+  kind: 'agentic',
+  model: 'claude-sonnet-4-20250514',
+  temperature: 0.2,
+  maxInputTokens: 4000,
+  maxOutputTokens: 500,
+  inputSchema: S.SupportApprovalDecisionInput,
+  outputSchema: S.SupportApprovalDecisionOutput,
+  auditAction: 'decision_impact_generated',
+  purpose:
+    'Produce three short impact statements (approve / deny / escalate) plus a per-co-approver ' +
+    '"why required" reason. Used to populate Approval.decisionImpact at chain construction.',
+  buildPrompt: makeBuildPrompt<S.SupportApprovalDecisionInput>(
+    [
+      'Produce three short impact statements:',
+      '- approve: 1-2 sentences. What state transitions, what becomes possible, what timing applies.',
+      '- deny: 1-2 sentences. What returns to the requester, any cooldown, any escalation path.',
+      '- escalate: 1-2 sentences. Where it goes, what the requester sees.',
+      '',
+      'Also produce `whyEachApproverIsRequired`: one entry per co-approver, with role + name + 1-sentence why.',
+      'The length must match coApprovals.length exactly.',
+    ].join('\n'),
+    {
+      servicesFilter: (input) => [input.approval.impactedSystem],
+      excludeRole: true,
+    },
+  ),
+}
+
+const route_request: SkillSpec<S.RouteRequestInput, S.RouteRequestOutput> = {
+  name: 'route_request',
+  kind: 'agentic',
+  model: 'claude-sonnet-4-20250514',
+  temperature: 0.1,
+  maxInputTokens: 6000,
+  maxOutputTokens: 800,
+  inputSchema: S.RouteRequestInput,
+  outputSchema: S.RouteRequestOutput,
+  auditAction: 'approval_chain_constructed',
+  purpose:
+    'Identify the co-approval chain participants (one user per required role) with a 1-sentence why. ' +
+    'Marks isFiler=true when an eligible candidate matches the filer; the calling service applies SOD.',
+  buildPrompt: makeBuildPrompt<S.RouteRequestInput>(
+    [
+      'For each required approver role, identify the user(s). Prefer:',
+      '- service-specific owner over generic role-holder when the entity has a service field',
+      '- the user\'s manager when the entity is access-related and the role is "manager-of-requester"',
+      '- the system owner when the role is "owner-of-system"',
+      '- when multiple eligible, pick the team-aligned one (most adjacent to the entity\'s ownerTeam)',
+      '',
+      'For each chosen user, write a 1-sentence "why" explaining their fit.',
+      'Set isFiler=true if the chosen name equals filerName (the caller will apply SOD).',
+      'If a required role has no eligible user, list it in unresolvedRoles (omit from participants).',
+    ].join('\n'),
+    {
+      excludeRole: true,
+      excludeT4: true,
+    },
+  ),
+}
+
+const propose_bounded_remediation: SkillSpec<
+  S.ProposeBoundedRemediationInput,
+  S.ProposeBoundedRemediationOutput
+> = {
+  name: 'propose_bounded_remediation',
+  kind: 'agentic',
+  model: 'claude-sonnet-4-20250514',
+  temperature: 0.2,
+  maxInputTokens: 6000,
+  maxOutputTokens: 1200,
+  inputSchema: S.ProposeBoundedRemediationInput,
+  outputSchema: S.ProposeBoundedRemediationOutput,
+  auditAction: 'remediation_proposed',
+  purpose:
+    'Draft a single-service, single-environment, single-changeType remediation proposal with ' +
+    'estimated blast radius, rollback plan, and suggested maintenance window. Output is a draft.',
+  buildPrompt: makeBuildPrompt<S.ProposeBoundedRemediationInput>(
+    [
+      'Propose ONE bounded remediation. Constraints:',
+      '- targetService: must be one of authorContext.systemsOwned, OR incident.affectedService.',
+      '- environment: production unless the incident is staging.',
+      '- changeType: rollback | config_change | restart | failover.',
+      '- estimatedRiskLevel: critical | high | medium | low.',
+      '- rollbackPlan: required.',
+      '- suggestedMaintenanceWindow: ISO range or null for "execute now".',
+      '',
+      'If the remediation cannot be bounded (e.g. needs cross-service changes), do NOT relax the constraint. ' +
+        'Return warnings explaining the multi-service issue and propose only the first-step single-service change.',
+    ].join('\n'),
+    {
+      servicesFilter: (input) => [input.incident.affectedService],
+    },
+  ),
+}
+
+const draft_approval_packet: SkillSpec<
+  S.DraftApprovalPacketInput,
+  S.DraftApprovalPacketOutput
+> = {
+  name: 'draft_approval_packet',
+  kind: 'agentic',
+  model: 'claude-sonnet-4-20250514',
+  temperature: 0.3,
+  maxInputTokens: 8000,
+  maxOutputTokens: 1500,
+  inputSchema: S.DraftApprovalPacketInput,
+  outputSchema: S.DraftApprovalPacketOutput,
+  auditAction: 'approval_packet_drafted',
+  purpose:
+    'Compress a Change + its blast radius + recommendations + policy posture + approval-chain status ' +
+    'into a one-page approval brief with sections and an advisory recommendation.',
+  buildPrompt: makeBuildPrompt<S.DraftApprovalPacketInput>(
+    [
+      'Produce a structured approval packet. Each section is 2-5 sentences:',
+      '- whatChanges, whyNow, blastRadiusSummary, riskPosture, rollbackPlan,',
+      '- policyPosture, approvalChain, openQuestions.',
+      'oneLineSummary is the elevator pitch.',
+      'recommendation must be one of: approve | approve_with_condition | investigate_further | deny.',
+      'recommendationRationale: 1-3 sentences.',
+      'The recommendation is ADVISORY ONLY. Do not phrase it as a decision.',
+    ].join('\n'),
+    {
+      servicesFilter: (input) => [input.change.service],
+    },
+  ),
+}
+
+const draft_work_note: SkillSpec<S.DraftWorkNoteInput, S.DraftWorkNoteOutput> = {
+  name: 'draft_work_note',
+  kind: 'agentic',
+  model: 'claude-sonnet-4-20250514',
+  temperature: 0.4,
+  maxInputTokens: 3500,
+  maxOutputTokens: 400,
+  inputSchema: S.DraftWorkNoteInput,
+  outputSchema: S.DraftWorkNoteOutput,
+  auditAction: 'work_note_drafted',
+  purpose:
+    'Draft a ServiceNow-style work note (3-6 sentences) with a recommended next-update time and audience.',
+  buildPrompt: makeBuildPrompt<S.DraftWorkNoteInput>(
+    [
+      'Draft a work note. Tone: factual, concise, no marketing, no apologies.',
+      'Structure:',
+      '- 1 sentence: current state',
+      '- 1-2 sentences: what has been investigated / changed since last update',
+      '- 1 sentence: who is involved',
+      '- 1 sentence: next update time',
+      '',
+      'Recommend a next-update time (ISO duration). Sev1 → PT15M. Sev2 → PT30M. Sev3/4 → PT2H or longer.',
+      'Pick audience: on_call (page-worthy), assignment_group (team-wide), incident_commander.',
+    ].join('\n'),
+    {
+      servicesFilter: (input) => [input.incident.affectedService],
+      excludePolicy: true,
+    },
+  ),
+}
+
+const draft_customer_response: SkillSpec<
+  S.DraftCustomerResponseInput,
+  S.DraftCustomerResponseOutput
+> = {
+  name: 'draft_customer_response',
+  kind: 'agentic',
+  model: 'claude-sonnet-4-20250514',
+  temperature: 0.5,
+  maxInputTokens: 3000,
+  maxOutputTokens: 600,
+  inputSchema: S.DraftCustomerResponseInput,
+  outputSchema: S.DraftCustomerResponseOutput,
+  auditAction: 'customer_response_drafted',
+  purpose:
+    'Generate a customer-facing status update (status_page / support_reply / email_blast / social_media_short) ' +
+    'matching the requested intent phase. Strips internal jargon and engineer names.',
+  buildPrompt: makeBuildPrompt<S.DraftCustomerResponseInput>(
+    [
+      'Draft a customer-facing message. Constraints:',
+      '- No internal system names unless the customer would already know them.',
+      '- No engineer names. No internal ticket IDs.',
+      '- No technical root cause unless the customer asked.',
+      '- Calm, factual tone. No marketing apologies. No promises about timing beyond what is known.',
+      '',
+      'Channel sizing:',
+      '- status_page: 1-3 sentences, factual',
+      '- support_reply: 2-5 sentences, acknowledging the customer\'s specific report',
+      '- email_blast: subject + 4-7 sentences with structure',
+      '- social_media_short: ≤ 280 characters',
+      '',
+      'After drafting, set toneCheck:',
+      '- pass: ships clean',
+      '- review_recommended: jargon, over-promised timing, or marketing apology detected',
+    ].join('\n'),
+    {
+      excludePolicy: true,
+      excludeOrgCatalog: true,
+      excludeT4: true,
+    },
+  ),
+}
+
+const explain_policy_decision: SkillSpec<
+  S.ExplainPolicyDecisionInput,
+  S.ExplainPolicyDecisionOutput
+> = {
+  name: 'explain_policy_decision',
+  kind: 'agentic',
+  model: 'claude-sonnet-4-20250514',
+  temperature: 0.2,
+  maxInputTokens: 4000,
+  maxOutputTokens: 400,
+  inputSchema: S.ExplainPolicyDecisionInput,
+  outputSchema: S.ExplainPolicyDecisionOutput,
+  auditAction: 'policy_decision_explained',
+  purpose:
+    'Render a human-readable explanation of a deterministic policy outcome. Does not decide policy; ' +
+    'explains the verdict so the user can understand why and what would unblock.',
+  buildPrompt: makeBuildPrompt<S.ExplainPolicyDecisionInput>(
+    [
+      'Produce:',
+      '1. oneLineSummary — what happened, plain English',
+      '2. ruleNameDisplay — friendly rendering (e.g. "Production Write Guard" not "production-write-guard")',
+      '3. whyExplanation — why does this rule apply to THIS specific object? 2-4 sentences.',
+      '4. whatWouldUnblock — 1-2 sentences. If the input pre-computed a hint, refine it; otherwise reason about it.',
+      '5. nextStep — concrete user action',
+      '6. tone — "firm" for deny / hard policy, "neutral" for escalate / soft',
+    ].join('\n'),
+    {
+      excludeT4: true,
+      excludeT5: true,
+    },
+  ),
+}
+
+const summarize_decision_impact: SkillSpec<
+  S.SummarizeDecisionImpactInput,
+  S.SummarizeDecisionImpactOutput
+> = {
+  name: 'summarize_decision_impact',
+  kind: 'agentic',
+  model: 'claude-haiku-4-5-20251001',
+  temperature: 0.3,
+  maxInputTokens: 2500,
+  maxOutputTokens: 400,
+  inputSchema: S.SummarizeDecisionImpactInput,
+  outputSchema: S.SummarizeDecisionImpactOutput,
+  auditAction: 'decision_impact_summarized',
+  purpose:
+    'Reshape an Approval\'s already-stored decisionImpact strings into a spoken-style summary ' +
+    '(one_line / paragraph / three_options). Does NOT re-derive impact.',
+  buildPrompt: makeBuildPrompt<S.SummarizeDecisionImpactInput>(
+    [
+      'Reshape the stored decision impact strings. Do NOT invent new consequences.',
+      '',
+      'Format sizing:',
+      '- one_line: ≤ 30 words. Names the most likely recommended path given the chain state.',
+      '- paragraph: 3-5 sentences. Conversational. Explains the trade-off.',
+      '- three_options: a one-liner per option, in suggested reading order; populate `recommendedReadingOrder`.',
+    ].join('\n'),
+    {
+      excludePolicy: true,
+      excludeRole: true,
+      excludeOrgCatalog: true,
+      excludeT4: true,
+      excludeT5: true,
+    },
+  ),
+}
+
+// ─── Registry map ───────────────────────────────────────
+
+const _registry: Record<SkillName, SkillSpec<unknown, unknown>> = {
+  assess_change: assess_change as SkillSpec<unknown, unknown>,
+  analyze_blast_radius: analyze_blast_radius as SkillSpec<unknown, unknown>,
+  triage_incident: triage_incident as SkillSpec<unknown, unknown>,
+  evaluate_access_request: evaluate_access_request as SkillSpec<unknown, unknown>,
+  support_approval_decision: support_approval_decision as SkillSpec<unknown, unknown>,
+  route_request: route_request as SkillSpec<unknown, unknown>,
+  propose_bounded_remediation: propose_bounded_remediation as SkillSpec<unknown, unknown>,
+  draft_approval_packet: draft_approval_packet as SkillSpec<unknown, unknown>,
+  draft_work_note: draft_work_note as SkillSpec<unknown, unknown>,
+  draft_customer_response: draft_customer_response as SkillSpec<unknown, unknown>,
+  explain_policy_decision: explain_policy_decision as SkillSpec<unknown, unknown>,
+  summarize_decision_impact: summarize_decision_impact as SkillSpec<unknown, unknown>,
+}
+
+export function getSkill<TInput = unknown, TOutput = unknown>(
+  name: SkillName,
+): SkillSpec<TInput, TOutput> {
+  const spec = _registry[name]
+  if (!spec) throw new Error(`Skill not found in registry: ${name}`)
+  return spec as SkillSpec<TInput, TOutput>
+}
+
+export function listSkills(): Array<{ name: SkillName; purpose: string; kind: string }> {
+  return Object.values(_registry).map((s) => ({
+    name: s.name,
+    purpose: s.purpose,
+    kind: s.kind,
+  }))
+}
+
+export function hasSkill(name: string): name is SkillName {
+  return name in _registry
+}

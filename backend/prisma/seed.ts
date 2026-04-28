@@ -11,6 +11,7 @@ async function main() {
   console.log('🌱 Seeding database...')
 
   // Clean existing data (order matters for FK constraints)
+  await prisma.agentInvocation.deleteMany()
   await prisma.decisionImpact.deleteMany()
   await prisma.coApproval.deleteMany()
   await prisma.approval.deleteMany()
@@ -21,20 +22,29 @@ async function main() {
   await prisma.incident.deleteMany()
   await prisma.change.deleteMany()
   await prisma.policyRule.deleteMany()
+  await prisma.freezeWindow.deleteMany()
+  // Clear manager FK self-refs before deleting users
+  await prisma.user.updateMany({ data: { managerId: null } })
   await prisma.user.deleteMany()
 
   // ─── Users ─────────────────────────────────────────────
   console.log('  Creating users...')
   const pw = await hashPassword('password')
+  // Create with explicit IDs so manager self-references can be wired in a second pass.
   await prisma.user.createMany({
     data: [
-      { email: 'operator@sentinel.dev', name: 'Sam Operator', passwordHash: pw, role: 'operator', team: 'Operations' },
-      { email: 'engineer@sentinel.dev', name: 'Priya Engineer', passwordHash: pw, role: 'engineer', team: 'Platform Engineering' },
-      { email: 'itsupport@sentinel.dev', name: 'Jordan Support', passwordHash: pw, role: 'it_support', team: 'IT Support' },
-      { email: 'approver@sentinel.dev', name: 'Alex Approver', passwordHash: pw, role: 'approver', team: 'Change Advisory Board' },
-      { email: 'accessapprover@sentinel.dev', name: 'Dana Access', passwordHash: pw, role: 'access_approver', team: 'Security' },
-      { email: 'admin@sentinel.dev', name: 'Morgan Admin', passwordHash: pw, role: 'admin', team: 'Platform' },
+      { id: 'usr-admin',           email: 'admin@sentinel.dev',          name: 'Morgan Admin',     passwordHash: pw, role: 'admin',           team: 'Platform',                  systemsOwned: [] },
+      { id: 'usr-operator',        email: 'operator@sentinel.dev',       name: 'Sam Operator',     passwordHash: pw, role: 'operator',        team: 'Operations',                systemsOwned: [] },
+      { id: 'usr-engineer',        email: 'engineer@sentinel.dev',       name: 'Priya Engineer',   passwordHash: pw, role: 'engineer',        team: 'Platform Engineering',      systemsOwned: ['payment-service', 'order-api', 'user-auth'] },
+      { id: 'usr-itsupport',       email: 'itsupport@sentinel.dev',      name: 'Jordan Support',   passwordHash: pw, role: 'it_support',      team: 'IT Support',                systemsOwned: [] },
+      { id: 'usr-approver',        email: 'approver@sentinel.dev',       name: 'Alex Approver',    passwordHash: pw, role: 'approver',        team: 'Change Advisory Board',     systemsOwned: [] },
+      { id: 'usr-access-approver', email: 'accessapprover@sentinel.dev', name: 'Dana Access',      passwordHash: pw, role: 'access_approver', team: 'Security',                  systemsOwned: [] },
     ],
+  })
+  // Wire org chart: admin is top; everyone else reports to admin (flat tree for v1).
+  await prisma.user.updateMany({
+    where: { id: { in: ['usr-operator', 'usr-engineer', 'usr-itsupport', 'usr-approver', 'usr-access-approver'] } },
+    data: { managerId: 'usr-admin' },
   })
 
   // ─── Changes ───────────────────────────────────────────
@@ -111,6 +121,8 @@ async function main() {
       linkedPRs: ['https://github.com/acme/order-api/pull/973', 'https://github.com/acme/order-api/pull/974'],
       ciStatus: 'passing',
       maintenanceWindow: '2026-03-16T04:00:00Z',
+      maintenanceWindowStart: new Date('2026-03-16T04:00:00Z'),
+      maintenanceWindowEnd: new Date('2026-03-16T06:00:00Z'),
       rollbackPlan: true,
       createdAt: new Date('2026-03-10T14:22:00Z'),
       updatedAt: new Date('2026-03-14T16:45:00Z'),
@@ -534,6 +546,31 @@ async function main() {
     ],
   })
 
+  // ─── Freeze Windows ────────────────────────────────────
+  console.log('  Creating freeze windows...')
+  await prisma.freezeWindow.createMany({
+    data: [
+      {
+        id: 'frz-001',
+        name: 'Q1 close production freeze',
+        description: 'No production changes during Q1 financial close window. Break-glass requires admin + CAB sign-off.',
+        startsAt: new Date('2026-03-29T00:00:00Z'),
+        endsAt: new Date('2026-04-02T23:59:59Z'),
+        appliesTo: ['production'],
+        isActive: true,
+      },
+      {
+        id: 'frz-002',
+        name: 'Holiday code freeze',
+        description: 'Standard end-of-year holiday freeze. All non-emergency production changes blocked.',
+        startsAt: new Date('2026-12-22T00:00:00Z'),
+        endsAt: new Date('2027-01-02T23:59:59Z'),
+        appliesTo: ['production'],
+        isActive: false, // not active yet — future-dated
+      },
+    ],
+  })
+
   console.log('✅ Seed complete!')
   const counts = {
     users: await prisma.user.count(),
@@ -547,6 +584,8 @@ async function main() {
     decisionImpacts: await prisma.decisionImpact.count(),
     auditEvents: await prisma.auditEvent.count(),
     policyRules: await prisma.policyRule.count(),
+    freezeWindows: await prisma.freezeWindow.count(),
+    agentInvocations: await prisma.agentInvocation.count(),
   }
   console.log('  Counts:', counts)
 }

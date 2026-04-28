@@ -25,6 +25,10 @@ export interface Change {
   linkedPRs: string[]
   ciStatus: 'passing' | 'failing' | 'pending'
   maintenanceWindow: string | null
+  /** ISO timestamp — start of approved maintenance window (Phase 0). */
+  maintenanceWindowStart: string | null
+  /** ISO timestamp — end of approved maintenance window (Phase 0). */
+  maintenanceWindowEnd: string | null
   rollbackPlan: boolean
   createdAt: string
   updatedAt: string
@@ -113,6 +117,10 @@ export interface Approval {
   recommendedAction: string
   status: 'pending' | 'approved' | 'denied' | 'approved_with_condition'
   condition?: string
+  /** Phase 0 — set true once an `approved_with_condition` condition is satisfied. */
+  conditionResolved: boolean
+  conditionResolvedAt?: string
+  conditionResolvedBy?: string
   createdAt: string
   linkedObjectId: string
   coApprovals?: CoApproval[]
@@ -154,4 +162,43 @@ export interface PolicyRule {
   scope: string
   appliesTo: string[]
   isActive: boolean
+}
+
+// ─── Phase 0 additions ──────────────────────────────────
+
+/** Org- or service-scoped freeze window. Execution gate consults active windows. */
+export interface FreezeWindow {
+  id: string
+  name: string
+  description: string
+  startsAt: string
+  endsAt: string
+  /** Services or environments this freeze applies to. Empty = global. */
+  appliesTo: string[]
+  isActive: boolean
+  createdAt: string
+}
+
+export type AgentInvocationStatus = 'success' | 'validation_failed' | 'error'
+export type AgentSkillKind = 'agentic' | 'deterministic' | 'integration'
+
+/** Provenance row for a single agentic skill invocation. */
+export interface AgentInvocation {
+  id: string
+  /** Optional FK to the audit event this invocation produced. */
+  auditEventId: string | null
+  skill: string
+  kind: AgentSkillKind
+  model: string
+  promptHash: string
+  tokensIn: number
+  tokensOut: number
+  cached: boolean
+  latencyMs: number
+  confidence: number | null
+  status: AgentInvocationStatus
+  errorMessage: string | null
+  /** Actor name or "system" for autonomous skills. */
+  actor: string
+  createdAt: string
 }

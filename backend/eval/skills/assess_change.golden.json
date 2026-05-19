@@ -1,0 +1,90 @@
+{
+  "skill": "assess_change",
+  "samples": [
+    {
+      "name": "schema_migration_critical_service",
+      "description": "Schema change on payment-service (critical tier) → should classify high/critical",
+      "input": {
+        "change": {
+          "id": "chg-eval-1",
+          "ticketId": "CHG-EVAL-001",
+          "title": "Add NOT NULL constraint to payment_methods.user_id",
+          "description": "Adds NOT NULL constraint to user_id column on payment_methods table. Requires backfilling ~500K rows with default user_id derived from billing_account. Migration locks table briefly during ALTER. Rollback: DROP CONSTRAINT.",
+          "owner": "M. Liu",
+          "ownerTeam": "Payments",
+          "service": "payment-service",
+          "environment": "production",
+          "riskLevel": "medium",
+          "linkedPRs": ["https://github.com/co/payments/pull/4421"],
+          "ciStatus": "passing",
+          "maintenanceWindow": "2026-05-20 02:00-04:00 UTC",
+          "maintenanceWindowStart": "2026-05-20T02:00:00Z",
+          "maintenanceWindowEnd": "2026-05-20T04:00:00Z",
+          "rollbackPlan": true
+        }
+      },
+      "expectations": [
+        { "kind": "status_is", "value": "success" },
+        { "kind": "field_in", "path": "riskLevel", "value": ["high", "critical"], "label": "schema change on critical service → high or critical risk" },
+        { "kind": "field_min", "path": "confidence", "value": 0.5, "label": "confidence ≥ 0.5" },
+        { "kind": "field_length_min", "path": "signals", "value": 2, "label": "at least 2 contributing signals" }
+      ]
+    },
+    {
+      "name": "readonly_staging_low_risk",
+      "description": "Read-only config in staging → should classify low",
+      "input": {
+        "change": {
+          "id": "chg-eval-2",
+          "ticketId": "CHG-EVAL-002",
+          "title": "Increase log verbosity on search-service in staging",
+          "description": "Bumps LOG_LEVEL env var from INFO to DEBUG on search-service staging instances only. No code change. No persistent state change. Reverted by setting env var back to INFO and rolling pods.",
+          "owner": "R. Singh",
+          "ownerTeam": "Search",
+          "service": "search-service",
+          "environment": "staging",
+          "riskLevel": "medium",
+          "linkedPRs": [],
+          "ciStatus": "passing",
+          "maintenanceWindow": null,
+          "maintenanceWindowStart": null,
+          "maintenanceWindowEnd": null,
+          "rollbackPlan": true
+        }
+      },
+      "expectations": [
+        { "kind": "status_is", "value": "success" },
+        { "kind": "field_in", "path": "riskLevel", "value": ["low", "medium"], "label": "staging config change → low or medium risk" },
+        { "kind": "field_min", "path": "confidence", "value": 0.5 }
+      ]
+    },
+    {
+      "name": "no_rollback_production_critical",
+      "description": "Production change with no rollback plan on critical service → critical risk",
+      "input": {
+        "change": {
+          "id": "chg-eval-3",
+          "ticketId": "CHG-EVAL-003",
+          "title": "Drop deprecated columns from identity-service users table",
+          "description": "Drops 4 deprecated columns (legacy_oauth_token, old_email, signup_referrer, legacy_role_id) from users table on identity-service. Irreversible — columns and data lost. No rollback plan documented.",
+          "owner": "T. Anderson",
+          "ownerTeam": "Identity",
+          "service": "identity-service",
+          "environment": "production",
+          "riskLevel": "medium",
+          "linkedPRs": ["https://github.com/co/identity/pull/991"],
+          "ciStatus": "passing",
+          "maintenanceWindow": null,
+          "maintenanceWindowStart": null,
+          "maintenanceWindowEnd": null,
+          "rollbackPlan": false
+        }
+      },
+      "expectations": [
+        { "kind": "status_is", "value": "success" },
+        { "kind": "field_in", "path": "riskLevel", "value": ["high", "critical"], "label": "irreversible production change → high or critical" },
+        { "kind": "field_min", "path": "confidence", "value": 0.6 }
+      ]
+    }
+  ]
+}

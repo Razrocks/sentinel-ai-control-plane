@@ -33,6 +33,8 @@ export * from './schemas.js'
 
 export {
   buildSystemPrompt,
+  splitOnCacheBreak,
+  CACHE_BREAK_MARKER,
   renderInputAsJson,
   renderT1aIdentity,
   renderT1bPolicyBundle,
@@ -48,3 +50,6 @@ export {
 export { getSkill, listSkills, hasSkill } from './registry.js'
 
 export { runSkill, runners, isSkillRunnerConfigured } from './runner.js'
+
+export { validateReferences, violationsAreBlocking } from './validate-references.js'
+export type { ReferenceViolation } from './validate-references.js'

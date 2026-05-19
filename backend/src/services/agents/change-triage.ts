@@ -27,6 +27,7 @@ import type {
 } from '../skills/index.js'
 import { createAuditEvent } from '../audit.js'
 import { buildBaseContext, loadChangeT2Extras } from './context.js'
+import { gateConfidence } from './confidence.js'
 import type { RiskLevel as PrismaRiskLevel } from '@prisma/client'
 
 // Risk ordering for "keep higher of two"
@@ -93,24 +94,41 @@ export async function triageChange(opts: {
 
   let appliedRisk: PrismaRiskLevel = change.riskLevel
   if (assess.status === 'success' && assess.output) {
-    // Keep the higher of intake vs assessed (defensive)
-    appliedRisk = maxRisk(change.riskLevel, assess.output.riskLevel)
-    if (appliedRisk !== change.riskLevel) {
-      await prisma.change.update({
-        where: { id: change.id },
-        data: { riskLevel: appliedRisk },
+    const gate = gateConfidence('assess_change', assess.output.confidence)
+
+    if (gate.verdict === 'skip') {
+      // Low confidence — do NOT persist, but audit the attempt for visibility.
+      await createAuditEvent({
+        actor,
+        action: 'change_assessed',
+        objectType: 'change',
+        objectId: change.id,
+        objectTitle: `${change.ticketId}: ${change.title}`,
+        result: 'escalated',
+        details: `Assessment SKIPPED: ${gate.note}. Suggested risk=${assess.output.riskLevel}. Manual review recommended. Rationale: ${assess.output.riskRationale}`,
+        changeId: change.id,
+      })
+    } else {
+      // Persist (with or without warning). Apply defensive "keep higher" rule.
+      appliedRisk = maxRisk(change.riskLevel, assess.output.riskLevel)
+      if (appliedRisk !== change.riskLevel) {
+        await prisma.change.update({
+          where: { id: change.id },
+          data: { riskLevel: appliedRisk },
+        })
+      }
+      const warnPrefix = gate.verdict === 'persist_with_warning' ? `[LOW CONFIDENCE — ${gate.note}] ` : ''
+      await createAuditEvent({
+        actor,
+        action: 'change_assessed',
+        objectType: 'change',
+        objectId: change.id,
+        objectTitle: `${change.ticketId}: ${change.title}`,
+        result: 'success',
+        details: `${warnPrefix}Assessed risk=${assess.output.riskLevel} (applied=${appliedRisk}, confidence=${gate.confidence.toFixed(2)}). ${assess.output.riskRationale}`,
+        changeId: change.id,
       })
     }
-    await createAuditEvent({
-      actor,
-      action: 'change_assessed',
-      objectType: 'change',
-      objectId: change.id,
-      objectTitle: `${change.ticketId}: ${change.title}`,
-      result: 'success',
-      details: `Assessed risk=${assess.output.riskLevel} (applied=${appliedRisk}). ${assess.output.riskRationale}`,
-      changeId: change.id,
-    })
   } else {
     await createAuditEvent({
       actor,

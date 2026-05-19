@@ -1,0 +1,86 @@
+{
+  "skill": "summarize_decision_impact",
+  "samples": [
+    {
+      "name": "one_line_high_risk",
+      "description": "High-risk approval, one_line format → short summary naming likely path",
+      "input": {
+        "approval": {
+          "id": "ap-eval-1",
+          "type": "change",
+          "title": "Rollback CHG-2026-001 on payment-service",
+          "riskLevel": "high",
+          "decisionImpact": {
+            "approve": "Rollback applies immediately. payment-service returns to prior binary with ~4-minute downtime.",
+            "deny": "Rollback rejected. Incident remains open; on-call must propose alternative within 1 hour.",
+            "escalate": "Routes to senior SRE. Additional 30-minute delay; incident severity may be reassessed."
+          },
+          "coApprovals": [
+            { "role": "SRE-Owner", "name": "J. Wu", "status": "pending" }
+          ],
+          "condition": null
+        },
+        "format": "one_line"
+      },
+      "expectations": [
+        { "kind": "status_is", "value": "success", "label": "skill returns success" },
+        { "kind": "has_field", "path": "summary", "label": "summary field present" },
+        { "kind": "field_length_max", "path": "summary", "value": 250, "label": "summary ≤ 250 chars (one_line)" }
+      ]
+    },
+    {
+      "name": "paragraph_format",
+      "description": "Paragraph format → 3-5 sentences explaining trade-off",
+      "input": {
+        "approval": {
+          "id": "ap-eval-2",
+          "type": "access",
+          "title": "Grant admin on customer-data-warehouse to engineer",
+          "riskLevel": "high",
+          "decisionImpact": {
+            "approve": "Engineer gains write access to customer-data-warehouse. Time-bound 30 days. Audit log enabled.",
+            "deny": "Request returned. Engineer must scope to specific datasets and re-file.",
+            "escalate": "Routes to Security team for PII review. 48-hour SLA."
+          },
+          "coApprovals": [
+            { "role": "manager-of-requester", "name": "S. Park", "status": "approved" },
+            { "role": "owner-of-system", "name": "C. Davies", "status": "pending" }
+          ],
+          "condition": null
+        },
+        "format": "paragraph"
+      },
+      "expectations": [
+        { "kind": "status_is", "value": "success" },
+        { "kind": "has_field", "path": "summary" },
+        { "kind": "field_length_min", "path": "summary", "value": 100, "label": "summary ≥ 100 chars (paragraph)" }
+      ]
+    },
+    {
+      "name": "three_options_reading_order",
+      "description": "three_options format → must populate recommendedReadingOrder",
+      "input": {
+        "approval": {
+          "id": "ap-eval-3",
+          "type": "remediation",
+          "title": "Restart order-api workers",
+          "riskLevel": "medium",
+          "decisionImpact": {
+            "approve": "Workers restart sequentially. 30-second per-instance downtime. Order processing unaffected via failover.",
+            "deny": "Issue persists. Manual remediation required.",
+            "escalate": "Routes to platform team. May trigger full deploy rollback."
+          },
+          "coApprovals": [],
+          "condition": null
+        },
+        "format": "three_options"
+      },
+      "expectations": [
+        { "kind": "status_is", "value": "success" },
+        { "kind": "has_field", "path": "summary" },
+        { "kind": "has_field", "path": "recommendedReadingOrder", "label": "reading order populated for three_options" },
+        { "kind": "field_length_min", "path": "recommendedReadingOrder", "value": 3, "label": "3 options ranked" }
+      ]
+    }
+  ]
+}

@@ -28,3 +28,6 @@ export {
   loadIncidentT2Extras,
   loadAuditSlice,
 } from './context.js'
+
+export { gateConfidence, DEFAULT_THRESHOLDS, SKILL_THRESHOLDS } from './confidence.js'
+export type { ConfidenceCheck, ConfidenceVerdict, ConfidenceThresholds } from './confidence.js'

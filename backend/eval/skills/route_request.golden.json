@@ -1,0 +1,71 @@
+{
+  "skill": "route_request",
+  "samples": [
+    {
+      "name": "change_three_roles_three_participants",
+      "description": "Change with 3 required roles → 3 participants picked, 0 unresolved",
+      "input": {
+        "entity": {
+          "type": "change",
+          "id": "chg-eval-route-1",
+          "title": "Schema migration on payment-service",
+          "relevantFields": { "service": "payment-service", "environment": "production", "riskLevel": "high", "ownerTeam": "Payments" }
+        },
+        "policyContext": {
+          "requiredApproverRoles": ["SRE-Owner", "Database-Owner", "Risk-Compliance"],
+          "activeFreezesAffecting": []
+        },
+        "orgCatalog": {
+          "usersByRole": {
+            "SRE-Owner": [{ "id": "usr-jwu", "name": "J. Wu", "team": "SRE" }],
+            "Database-Owner": [{ "id": "usr-cdavies", "name": "C. Davies", "team": "Data" }],
+            "Risk-Compliance": [{ "id": "usr-mpatel", "name": "M. Patel", "team": "Risk" }]
+          },
+          "serviceOwners": {
+            "payment-service": [{ "id": "usr-jwu", "name": "J. Wu", "team": "SRE" }]
+          },
+          "managerHierarchy": { "usr-jwu": null, "usr-cdavies": null, "usr-mpatel": null }
+        },
+        "filerName": "M. Liu",
+        "mode": "construct_chain"
+      },
+      "expectations": [
+        { "kind": "status_is", "value": "success" },
+        { "kind": "field_length_min", "path": "participants", "value": 3, "label": "3 participants for 3 roles" },
+        { "kind": "field_length_max", "path": "participants", "value": 3, "label": "exactly 3" },
+        { "kind": "field_length_max", "path": "unresolvedRoles", "value": 0, "label": "no unresolved roles" }
+      ]
+    },
+    {
+      "name": "missing_role_yields_unresolved",
+      "description": "Role with no eligible users → unresolvedRoles populated, participants smaller",
+      "input": {
+        "entity": {
+          "type": "change",
+          "id": "chg-eval-route-2",
+          "title": "Network reconfiguration",
+          "relevantFields": { "service": "order-api", "environment": "production" }
+        },
+        "policyContext": {
+          "requiredApproverRoles": ["SRE-Owner", "Network-Owner"],
+          "activeFreezesAffecting": []
+        },
+        "orgCatalog": {
+          "usersByRole": {
+            "SRE-Owner": [{ "id": "usr-jwu", "name": "J. Wu", "team": "SRE" }],
+            "Network-Owner": []
+          },
+          "serviceOwners": {
+            "order-api": [{ "id": "usr-jwu", "name": "J. Wu", "team": "SRE" }]
+          },
+          "managerHierarchy": { "usr-jwu": null }
+        },
+        "mode": "construct_chain"
+      },
+      "expectations": [
+        { "kind": "status_is", "value": "success" },
+        { "kind": "field_length_min", "path": "unresolvedRoles", "value": 1, "label": "Network-Owner unresolved" }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,79 @@
+{
+  "skill": "support_approval_decision",
+  "samples": [
+    {
+      "name": "change_three_coapprovers",
+      "description": "Change approval with 3 co-approvers → three impact strings + 3 why entries",
+      "input": {
+        "approval": {
+          "id": "ap-eval-sup-1",
+          "type": "change",
+          "title": "Schema migration: NOT NULL on orders.customer_id",
+          "requester": "M. Liu",
+          "impactedSystem": "order-api",
+          "riskLevel": "high",
+          "reason": "Required for new loyalty integration",
+          "recommendedAction": "approve with maintenance window adherence",
+          "linkedObjectId": "chg-eval-sup-1",
+          "coApprovals": [
+            { "role": "SRE-Owner", "name": "J. Wu", "status": "pending" },
+            { "role": "Database-Owner", "name": "C. Davies", "status": "pending" },
+            { "role": "Risk-Compliance", "name": "M. Patel", "status": "pending" }
+          ]
+        },
+        "linkedEntity": {
+          "type": "change",
+          "data": { "service": "order-api", "environment": "production", "riskLevel": "high" }
+        },
+        "policyContext": {
+          "activePolicyRules": [
+            { "name": "production-write-guard", "description": "Blocks pending-approval writes", "decision": "deny" }
+          ],
+          "activeFreezesAffecting": []
+        }
+      },
+      "expectations": [
+        { "kind": "status_is", "value": "success" },
+        { "kind": "has_field", "path": "approve" },
+        { "kind": "has_field", "path": "deny" },
+        { "kind": "has_field", "path": "escalate" },
+        { "kind": "field_length_min", "path": "whyEachApproverIsRequired", "value": 3, "label": "3 why entries for 3 co-approvers" },
+        { "kind": "field_length_max", "path": "whyEachApproverIsRequired", "value": 3, "label": "exactly 3 entries" }
+      ]
+    },
+    {
+      "name": "access_two_coapprovers",
+      "description": "Access approval with 2 co-approvers → 2 why entries",
+      "input": {
+        "approval": {
+          "id": "ap-eval-sup-2",
+          "type": "access",
+          "title": "Grant admin on customer-data-warehouse",
+          "requester": "M. Liu",
+          "impactedSystem": "customer-data-warehouse",
+          "riskLevel": "high",
+          "reason": "Q2 reporting investigation",
+          "recommendedAction": "approve with 30-day time-bound",
+          "linkedObjectId": "ar-eval-sup-2",
+          "coApprovals": [
+            { "role": "manager-of-requester", "name": "S. Park", "status": "approved" },
+            { "role": "owner-of-system", "name": "C. Davies", "status": "pending" }
+          ]
+        },
+        "linkedEntity": {
+          "type": "access_request",
+          "data": { "requestedSystem": "customer-data-warehouse", "requestedRole": "admin" }
+        },
+        "policyContext": {
+          "activePolicyRules": [],
+          "activeFreezesAffecting": []
+        }
+      },
+      "expectations": [
+        { "kind": "status_is", "value": "success" },
+        { "kind": "field_length_min", "path": "whyEachApproverIsRequired", "value": 2 },
+        { "kind": "field_length_max", "path": "whyEachApproverIsRequired", "value": 2 }
+      ]
+    }
+  ]
+}

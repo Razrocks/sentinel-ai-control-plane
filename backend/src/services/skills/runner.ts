@@ -21,6 +21,8 @@ import Anthropic from '@anthropic-ai/sdk'
 import { config } from '../../config.js'
 import { prisma } from '../../lib/prisma.js'
 import { getSkill, hasSkill } from './registry.js'
+import { splitOnCacheBreak } from './prompt.js'
+import { validateReferences, violationsAreBlocking } from './validate-references.js'
 import type {
   RunnerResult,
   RunnerStatus,
@@ -166,6 +168,27 @@ export async function runSkill<TInput = unknown, TOutput = unknown>(
   const { system, user } = spec.buildPrompt(inputCheck.data, ctx)
   const promptHash = hashPrompt(system, user)
 
+  // 2a. Split into cached + dynamic blocks for prompt caching.
+  // Anthropic ephemeral cache: 5-min TTL, 90% discount on hits.
+  // Min cacheable block size is 1024 tokens — we only request caching when
+  // the stable half is large enough to be worth caching.
+  const { cached: cachedBlock, dynamic: dynamicBlock } = splitOnCacheBreak(system)
+  // Rough token estimate: 1 token ≈ 3.5 chars. Skip cache if too small.
+  const CACHE_MIN_CHARS = 1024 * 3 // ~1024 tokens
+  const useCache = cachedBlock.length >= CACHE_MIN_CHARS
+
+  const systemBlocks: Array<{ type: 'text'; text: string; cache_control?: { type: 'ephemeral' } }> = []
+  if (cachedBlock) {
+    systemBlocks.push(
+      useCache
+        ? { type: 'text', text: cachedBlock, cache_control: { type: 'ephemeral' } }
+        : { type: 'text', text: cachedBlock },
+    )
+  }
+  if (dynamicBlock) {
+    systemBlocks.push({ type: 'text', text: dynamicBlock })
+  }
+
   // 3. Call model
   const client = getClient()
   const startedAt = Date.now()
@@ -173,21 +196,26 @@ export async function runSkill<TInput = unknown, TOutput = unknown>(
   let tokensIn = 0
   let tokensOut = 0
   let cached = false
+  let cacheReadTokens = 0
+  let cacheWriteTokens = 0
 
   try {
     const response = await client.messages.create({
       model: spec.model,
       max_tokens: spec.maxOutputTokens,
       temperature: spec.temperature,
-      system,
+      system: systemBlocks,
       messages: [{ role: 'user', content: user }],
     })
 
     tokensIn = response.usage?.input_tokens ?? 0
     tokensOut = response.usage?.output_tokens ?? 0
-    cached = (response.usage as { cache_read_input_tokens?: number } | undefined)?.cache_read_input_tokens
-      ? true
-      : false
+    const usage = response.usage as
+      | { cache_read_input_tokens?: number; cache_creation_input_tokens?: number }
+      | undefined
+    cacheReadTokens = usage?.cache_read_input_tokens ?? 0
+    cacheWriteTokens = usage?.cache_creation_input_tokens ?? 0
+    cached = cacheReadTokens > 0
 
     // Concatenate any text blocks
     for (const block of response.content) {
@@ -286,7 +314,41 @@ export async function runSkill<TInput = unknown, TOutput = unknown>(
     }
   }
 
-  // 6. Success
+  // 6. Reference validator post-pass (anti-hallucination).
+  // Scans output for entity references (service names, etc.) and verifies
+  // each one exists in the catalog passed via context. Unknown service names
+  // → fail the call. Other reference types are advisory-only (logged but not blocking).
+  const violations = validateReferences(outputCheck.data, ctx, inputCheck.data)
+  if (violations.length > 0 && violationsAreBlocking(violations)) {
+    const violationList = violations.map((v) => `${v.kind}: ${v.value}`).join('; ')
+    const errMsg = `output references unknown entities: ${violationList}`
+    let invocationId: string | undefined
+    if (!options.skipProvenance) {
+      invocationId = await writeProvenance({
+        skill: name,
+        kind: spec.kind,
+        model: spec.model,
+        promptHash,
+        tokensIn,
+        tokensOut,
+        cached,
+        latencyMs,
+        confidence: null,
+        status: 'validation_failed',
+        errorMessage: errMsg,
+        actor,
+      })
+    }
+    return {
+      status: 'validation_failed',
+      rawOutput: rawText,
+      errorMessage: errMsg,
+      invocationId,
+      metrics: { tokensIn, tokensOut, latencyMs, cached },
+    }
+  }
+
+  // 7. Success
   const validated = outputCheck.data as TOutput & { confidence?: number }
   const confidence = typeof validated.confidence === 'number' ? validated.confidence : null
 

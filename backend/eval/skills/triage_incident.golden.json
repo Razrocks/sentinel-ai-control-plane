@@ -1,0 +1,64 @@
+{
+  "skill": "triage_incident",
+  "samples": [
+    {
+      "name": "deploy_correlated_5xx",
+      "description": "5xx errors spike right after a deploy → should classify deploy-correlated",
+      "input": {
+        "incident": {
+          "id": "inc-eval-1",
+          "incidentId": "INC-EVAL-001",
+          "title": "Elevated 5xx errors on payment-service POST /charge",
+          "description": "Error rate on POST /charge jumped from 0.1% to 5% at 14:18 UTC. No infra alerts. No DB CPU spike. Mobile clients seeing 500s during checkout. Started shortly after a deploy.",
+          "requester": "P. Lopez",
+          "affectedService": "payment-service",
+          "severity": "sev3",
+          "assignmentGroup": "Payments",
+          "relatedCI": ["payment-service"],
+          "isRecurring": false
+        },
+        "recentDeploysOnService": [
+          { "ticketId": "CHG-2026-001", "deployedAt": "2026-04-28T14:18Z", "result": "success" }
+        ],
+        "recentIncidentsOnService": [],
+        "candidateKbArticles": [
+          { "id": "KB-0042", "title": "5xx after payment deploy", "snippet": "Common cause: missing migration sync" }
+        ]
+      },
+      "expectations": [
+        { "kind": "status_is", "value": "success" },
+        { "kind": "field_equals", "path": "rootCauseCategory", "value": "deploy-correlated", "label": "should identify deploy correlation" },
+        { "kind": "field_in", "path": "severity", "value": ["sev1", "sev2"], "label": "checkout-impacting 5xx → sev1 or sev2" },
+        { "kind": "field_min", "path": "confidence", "value": 0.5 }
+      ]
+    },
+    {
+      "name": "config_root_cause",
+      "description": "401 errors after no deploys → config or external dependency",
+      "input": {
+        "incident": {
+          "id": "inc-eval-2",
+          "incidentId": "INC-EVAL-002",
+          "title": "Intermittent 401 errors on identity-service /token endpoint",
+          "description": "About 5% of /token requests returning 401 since 09:00 UTC. No recent deploys. JWT signing key was rotated overnight per quarterly schedule. Other endpoints unaffected.",
+          "requester": "K. Suzuki",
+          "affectedService": "identity-service",
+          "severity": "sev3",
+          "assignmentGroup": "Identity",
+          "relatedCI": ["identity-service"],
+          "isRecurring": false
+        },
+        "recentDeploysOnService": [],
+        "recentIncidentsOnService": [],
+        "candidateKbArticles": [
+          { "id": "KB-0157", "title": "JWT key rotation incidents", "snippet": "Common after quarterly rotations" }
+        ]
+      },
+      "expectations": [
+        { "kind": "status_is", "value": "success" },
+        { "kind": "field_in", "path": "rootCauseCategory", "value": ["config", "infra", "external-dependency"], "label": "no-deploy 401 → config/infra/external" },
+        { "kind": "field_min", "path": "confidence", "value": 0.4 }
+      ]
+    }
+  ]
+}

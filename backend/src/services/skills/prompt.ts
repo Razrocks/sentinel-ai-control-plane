@@ -233,11 +233,32 @@ export interface SystemPromptOptions {
 }
 
 /**
+ * Cache breakpoint marker. Runner splits the system prompt on this to build
+ * a 2-block array: [cached stable T1+task] + [non-cached dynamic T2/T4/T5].
+ * Marker text never appears in any rendered tier so collisions are impossible.
+ */
+export const CACHE_BREAK_MARKER = '<<<SENTINEL_CACHE_BREAK>>>'
+
+/**
  * Compose a system prompt by joining the requested context tiers.
- * Each fragment is a stable section header + body for caching.
+ * Sections before CACHE_BREAK_MARKER are stable per skill (eligible for cache);
+ * sections after vary per call (T2 entity extras, T4 audit slice, T5 temporal).
+ *
+ * Order (cached first, dynamic last):
+ *   1. [cached]   T1.a identity
+ *   2. [cached]   T1.b policy bundle
+ *   3. [cached]   T1.c role constraints
+ *   4. [cached]   T1.d org catalog
+ *   5. [cached]   T1.e skill registry (if opted in)
+ *   6. [cached]   Task instructions
+ *   -- CACHE_BREAK_MARKER --
+ *   7. [dynamic]  T2 entity extras
+ *   8. [dynamic]  T4 audit slice
+ *   9. [dynamic]  T5 temporal
  */
 export function buildSystemPrompt(ctx: SkillContext, opts: SystemPromptOptions = {}): string {
-  const sections: string[] = []
+  const cached: string[] = []
+  const dynamic: string[] = []
   const {
     includeIdentity = true,
     includePolicy = true,
@@ -251,37 +272,57 @@ export function buildSystemPrompt(ctx: SkillContext, opts: SystemPromptOptions =
     taskInstructions,
   } = opts
 
+  // ── CACHED HALF ─────────────────────────────────────
   if (includeIdentity) {
-    sections.push(renderT1aIdentity(ctx.t1?.identity))
+    cached.push(renderT1aIdentity(ctx.t1?.identity))
   }
   if (includePolicy && ctx.t1?.policyBundle) {
-    sections.push(renderT1bPolicyBundle(ctx.t1.policyBundle))
+    cached.push(renderT1bPolicyBundle(ctx.t1.policyBundle))
   }
   if (includeRole && ctx.t1?.roleConstraints) {
-    sections.push(renderT1cRoleConstraints(ctx.t1.roleConstraints))
+    cached.push(renderT1cRoleConstraints(ctx.t1.roleConstraints))
   }
   if (includeOrgCatalog && ctx.t1?.orgCatalog) {
-    sections.push(renderT1dOrgCatalog(ctx.t1.orgCatalog, { servicesFilter: orgCatalogServices }))
+    cached.push(renderT1dOrgCatalog(ctx.t1.orgCatalog, { servicesFilter: orgCatalogServices }))
   }
   if (includeSkillRegistry && ctx.t1?.skillRegistry) {
-    sections.push(renderT1eSkillRegistry(ctx.t1.skillRegistry))
+    cached.push(renderT1eSkillRegistry(ctx.t1.skillRegistry))
   }
+  if (taskInstructions) {
+    cached.push('## Task', taskInstructions)
+  }
+
+  // ── DYNAMIC HALF ────────────────────────────────────
   if (includeT2 && ctx.t2) {
     const t2 = renderT2Context(ctx.t2)
-    if (t2) sections.push(t2)
+    if (t2) dynamic.push(t2)
   }
   if (includeT4 && ctx.t4) {
     const t4 = renderT4Context(ctx.t4)
-    if (t4) sections.push(t4)
+    if (t4) dynamic.push(t4)
   }
   if (includeT5 && ctx.t5) {
-    sections.push(renderT5Context(ctx.t5))
-  }
-  if (taskInstructions) {
-    sections.push('## Task', taskInstructions)
+    dynamic.push(renderT5Context(ctx.t5))
   }
 
-  return sections.join('\n\n')
+  const cachedJoined = cached.join('\n\n')
+  const dynamicJoined = dynamic.join('\n\n')
+
+  if (!dynamicJoined) return cachedJoined
+  return `${cachedJoined}\n\n${CACHE_BREAK_MARKER}\n\n${dynamicJoined}`
+}
+
+/**
+ * Split a prompt produced by `buildSystemPrompt` into its cached + dynamic
+ * halves on the CACHE_BREAK_MARKER. Used by the runner to construct the
+ * Anthropic system content array with cache_control on the first block.
+ */
+export function splitOnCacheBreak(systemPrompt: string): { cached: string; dynamic: string } {
+  const idx = systemPrompt.indexOf(CACHE_BREAK_MARKER)
+  if (idx === -1) return { cached: systemPrompt, dynamic: '' }
+  const cached = systemPrompt.slice(0, idx).replace(/\n+$/, '')
+  const dynamic = systemPrompt.slice(idx + CACHE_BREAK_MARKER.length).replace(/^\n+/, '')
+  return { cached, dynamic }
 }
 
 // ─── User message helpers ───────────────────────────────

@@ -1,0 +1,80 @@
+{
+  "skill": "evaluate_access_request",
+  "samples": [
+    {
+      "name": "first_time_admin_access",
+      "description": "Engineer requests admin on critical system for first time → high risk, time-bound recommended",
+      "input": {
+        "request": {
+          "id": "ar-eval-1",
+          "requestId": "AR-EVAL-001",
+          "requester": "M. Liu",
+          "requesterEmail": "m.liu@sentinel.dev",
+          "requestedSystem": "customer-data-warehouse",
+          "requestedRole": "admin",
+          "justification": "Need admin to investigate Q2 reporting discrepancy.",
+          "manager": "S. Park",
+          "systemOwner": "C. Davies",
+          "riskLevel": "medium",
+          "entitlementCheck": "review_required"
+        },
+        "requesterContext": {
+          "role": "engineer",
+          "team": "Payments",
+          "managerId": "usr-spark",
+          "systemsOwned": ["payment-service"],
+          "pastRequests": []
+        },
+        "systemContext": {
+          "catalogTier": "high",
+          "rolePrivilegeLevel": "admin",
+          "activeFreezeAffectingSystem": false
+        }
+      },
+      "expectations": [
+        { "kind": "status_is", "value": "success" },
+        { "kind": "field_in", "path": "riskLevel", "value": ["high", "critical"], "label": "first-time admin on high-tier → high+" },
+        { "kind": "field_in", "path": "justificationQuality", "value": ["weak", "insufficient", "adequate"], "label": "thin justification → not strong" },
+        { "kind": "field_length_min", "path": "flags", "value": 1, "label": "at least 1 flag (no prior history)" }
+      ]
+    },
+    {
+      "name": "read_access_familiar_system",
+      "description": "Engineer requests read on system they often work with → low/medium risk, adequate quality",
+      "input": {
+        "request": {
+          "id": "ar-eval-2",
+          "requestId": "AR-EVAL-002",
+          "requester": "R. Singh",
+          "requesterEmail": "r.singh@sentinel.dev",
+          "requestedSystem": "search-service",
+          "requestedRole": "read",
+          "justification": "Investigating a search relevance bug reported by support. Need to read search-service logs and config to reproduce. Scope: search relevance pipeline only.",
+          "manager": "T. Anderson",
+          "systemOwner": "T. Anderson",
+          "riskLevel": "low",
+          "entitlementCheck": "eligible"
+        },
+        "requesterContext": {
+          "role": "engineer",
+          "team": "Search",
+          "managerId": "usr-tanderson",
+          "systemsOwned": ["search-service"],
+          "pastRequests": [
+            { "requestId": "AR-2025-330", "system": "search-service", "role": "read", "status": "approved", "resolvedAt": "2025-12-01T10:00:00Z" }
+          ]
+        },
+        "systemContext": {
+          "catalogTier": "medium",
+          "rolePrivilegeLevel": "read",
+          "activeFreezeAffectingSystem": false
+        }
+      },
+      "expectations": [
+        { "kind": "status_is", "value": "success" },
+        { "kind": "field_in", "path": "riskLevel", "value": ["low", "medium"], "label": "familiar read → low or medium" },
+        { "kind": "field_in", "path": "justificationQuality", "value": ["adequate", "strong"], "label": "specific scope → adequate or strong" }
+      ]
+    }
+  ]
+}

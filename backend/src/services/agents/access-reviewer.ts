@@ -22,6 +22,7 @@ import type {
 } from '../skills/index.js'
 import { createAuditEvent } from '../audit.js'
 import { buildBaseContext } from './context.js'
+import { gateConfidence } from './confidence.js'
 import type { RiskLevel as PrismaRiskLevel, UserRole } from '@prisma/client'
 
 const RISK_RANK: Record<string, number> = { low: 0, medium: 1, high: 2, critical: 3 }
@@ -141,34 +142,50 @@ export async function reviewAccessRequest(opts: {
 
   if (result.status === 'success' && result.output) {
     const e = result.output
-    appliedRisk = maxRisk(req.riskLevel, e.riskLevel)
-    const updateData: Parameters<typeof prisma.accessRequest.update>[0]['data'] = {}
+    const gate = gateConfidence('evaluate_access_request', e.confidence)
 
-    if (appliedRisk !== req.riskLevel) {
-      updateData.riskLevel = appliedRisk
-      fieldsUpdated.push('riskLevel')
-    }
-    // Append narrative to reason if it adds value
-    if (e.narrative && !req.reason.includes(e.narrative.slice(0, 40))) {
-      updateData.reason = req.reason
-        ? `${req.reason}\n\n[agent] ${e.narrative}`
-        : `[agent] ${e.narrative}`
-      fieldsUpdated.push('reason')
-    }
+    if (gate.verdict === 'skip') {
+      // Low confidence — don't persist; audit only.
+      await createAuditEvent({
+        actor,
+        action: 'access_evaluated',
+        objectType: 'access',
+        objectId: req.id,
+        objectTitle: `${req.requestId}: ${req.requestedRole} on ${req.requestedSystem}`,
+        result: 'escalated',
+        details: `Evaluation SKIPPED: ${gate.note}. Suggested risk=${e.riskLevel}, quality=${e.justificationQuality}. Manual approver review recommended.`,
+      })
+    } else {
+      appliedRisk = maxRisk(req.riskLevel, e.riskLevel)
+      const updateData: Parameters<typeof prisma.accessRequest.update>[0]['data'] = {}
 
-    if (Object.keys(updateData).length > 0) {
-      await prisma.accessRequest.update({ where: { id: req.id }, data: updateData })
-    }
+      if (appliedRisk !== req.riskLevel) {
+        updateData.riskLevel = appliedRisk
+        fieldsUpdated.push('riskLevel')
+      }
+      // Append narrative to reason if it adds value
+      if (e.narrative && !req.reason.includes(e.narrative.slice(0, 40))) {
+        updateData.reason = req.reason
+          ? `${req.reason}\n\n[agent] ${e.narrative}`
+          : `[agent] ${e.narrative}`
+        fieldsUpdated.push('reason')
+      }
 
-    await createAuditEvent({
-      actor,
-      action: 'access_evaluated',
-      objectType: 'access',
-      objectId: req.id,
-      objectTitle: `${req.requestId}: ${req.requestedRole} on ${req.requestedSystem}`,
-      result: 'success',
-      details: `risk=${e.riskLevel} (applied=${appliedRisk}), justification=${e.justificationQuality}, flags=${e.flags.length}`,
-    })
+      if (Object.keys(updateData).length > 0) {
+        await prisma.accessRequest.update({ where: { id: req.id }, data: updateData })
+      }
+
+      const warnPrefix = gate.verdict === 'persist_with_warning' ? `[LOW CONFIDENCE — ${gate.note}] ` : ''
+      await createAuditEvent({
+        actor,
+        action: 'access_evaluated',
+        objectType: 'access',
+        objectId: req.id,
+        objectTitle: `${req.requestId}: ${req.requestedRole} on ${req.requestedSystem}`,
+        result: 'success',
+        details: `${warnPrefix}risk=${e.riskLevel} (applied=${appliedRisk}, confidence=${gate.confidence.toFixed(2)}), justification=${e.justificationQuality}, flags=${e.flags.length}`,
+      })
+    }
   } else {
     await createAuditEvent({
       actor,

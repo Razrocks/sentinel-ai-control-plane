@@ -15,15 +15,44 @@ import { actionsRoutes } from './routes/actions.js'
 import { chatRoutes } from './routes/chat.js'
 import { agentsRoutes } from './routes/agents.js'
 
+// ─── Secret redaction ────────────────────────────────────
+// Hard lock: never log auth headers, cookies, API keys, JWTs, or env values.
+// Applies to every log line emitted by Fastify or pino.
+const REDACT_PATHS = [
+  'req.headers.authorization',
+  'req.headers.cookie',
+  'req.headers["x-api-key"]',
+  'req.headers["anthropic-api-key"]',
+  'res.headers["set-cookie"]',
+  // Defensive: if env or config ever logged, redact known secret fields
+  '*.ANTHROPIC_API_KEY',
+  '*.anthropicApiKey',
+  '*.JWT_SECRET',
+  '*.jwtSecret',
+  '*.password',
+  '*.passwordHash',
+  '*.token',
+  '*.apiKey',
+]
+
 const app = Fastify({
   logger: {
     level: config.nodeEnv === 'development' ? 'info' : 'warn',
+    redact: { paths: REDACT_PATHS, censor: '[REDACTED]' },
     transport:
       config.nodeEnv === 'development'
         ? { target: 'pino-pretty', options: { translateTime: 'HH:MM:ss', ignore: 'pid,hostname' } }
         : undefined,
   },
 })
+
+// ─── Defensive: strip any sk-ant-* keys from strings before they reach logs / clients
+function scrubSecrets(text: string): string {
+  return text
+    .replace(/sk-ant-[A-Za-z0-9_-]{20,}/g, '[REDACTED_ANTHROPIC_KEY]')
+    .replace(/Bearer\s+[A-Za-z0-9._-]{20,}/gi, 'Bearer [REDACTED_JWT]')
+    .replace(/eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}/g, '[REDACTED_JWT]')
+}
 
 // ─── Plugins ─────────────────────────────────────────────
 await app.register(cors, {
@@ -32,18 +61,27 @@ await app.register(cors, {
 })
 
 // ─── Error handler ───────────────────────────────────────
+// All error messages run through scrubSecrets before reaching the client OR logs.
+// Anthropic SDK and other libs sometimes embed credentials in error messages —
+// we never want those to escape this boundary.
 app.setErrorHandler((error, _request, reply) => {
   if (error instanceof AppError) {
     return reply.status(error.statusCode).send({
       error: error.code,
-      message: error.message,
+      message: scrubSecrets(error.message),
     })
   }
 
-  app.log.error(error)
+  // Log a scrubbed copy; never log the raw error object that may contain secrets
+  const err = error as Error
+  app.log.error({ msg: scrubSecrets(err.message ?? String(error)), name: err.name })
+
   return reply.status(500).send({
     error: 'INTERNAL_SERVER_ERROR',
-    message: config.nodeEnv === 'development' ? (error as Error).message : 'Internal server error',
+    message:
+      config.nodeEnv === 'development'
+        ? scrubSecrets(err.message ?? 'Internal server error')
+        : 'Internal server error',
   })
 })
 

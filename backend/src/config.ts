@@ -1,4 +1,7 @@
-import 'dotenv/config'
+// .env wins over any pre-existing process env vars (common Windows quirk: an
+// empty ANTHROPIC_API_KEY set at user-profile level otherwise shadows .env).
+import { config as loadDotenv } from 'dotenv'
+loadDotenv({ override: true })
 
 export const config = {
   port: parseInt(process.env.PORT || '3001', 10),

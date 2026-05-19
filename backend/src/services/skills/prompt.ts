@@ -293,10 +293,19 @@ export function buildSystemPrompt(ctx: SkillContext, opts: SystemPromptOptions =
  */
 export function renderInputAsJson(input: unknown): string {
   return [
-    'Input payload:',
+    'Input payload (read-only — do NOT echo this back):',
     '```json',
     JSON.stringify(input, null, 2),
     '```',
-    'Respond with a single JSON object matching the output schema. No prose, no code fences.',
+    '',
+    'Now produce a NEW JSON object as your output. The output JSON shape is defined in the [Task]',
+    'section above — it has DIFFERENT fields from the input. Use the input as source material to',
+    'compute the output fields the task asks for.',
+    '',
+    'Rules:',
+    '- Output ONLY the JSON object. No prose before or after.',
+    '- No markdown code fences (no ```).',
+    '- No comments inside the JSON.',
+    '- Include every field the task lists as required.',
   ].join('\n')
 }

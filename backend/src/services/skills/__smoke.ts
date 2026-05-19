@@ -146,7 +146,7 @@ async function main() {
 
   const userMsg = renderInputAsJson({ hello: 'world' })
   check('renderInputAsJson includes JSON block', userMsg.includes('```json'))
-  check('renderInputAsJson asks for strict JSON output', userMsg.includes('No prose, no code fences'))
+  check('renderInputAsJson asks for strict JSON output', userMsg.includes('Output ONLY the JSON object'))
 
   // 4. Input validation rejects malformed payloads
   console.log('\n4. Input validation (validation_failed without API call)')

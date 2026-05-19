@@ -11,7 +11,9 @@
     "db:migrate": "prisma migrate dev",
     "db:migrate:deploy": "prisma migrate deploy",
     "db:seed": "tsx prisma/seed.ts",
-    "db:reset": "prisma migrate reset --force"
+    "db:reset": "prisma migrate reset --force",
+    "secret-scan": "node ../scripts/secret-scan.mjs",
+    "precommit": "node ../scripts/secret-scan.mjs --staged"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.88.0",

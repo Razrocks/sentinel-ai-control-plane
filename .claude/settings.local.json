@@ -37,7 +37,9 @@
       "Bash(git ls-remote *)",
       "Bash(xargs grep *)",
       "Bash(pg_isready -h localhost -p 5432)",
-      "Bash(echo \"EXIT: $?\")"
+      "Bash(echo \"EXIT: $?\")",
+      "Bash(git check-ignore *)",
+      "Bash(echo \"exit: $?\")"
     ]
   }
 }

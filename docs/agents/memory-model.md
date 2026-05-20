@@ -68,29 +68,45 @@ T1 is concatenated to the front of every prompt with `cache_control: ephemeral` 
 
 **What's *not* in T2.** Audit history. Other entities. Policy. Those live in their own tiers.
 
-## T3 — Conversation
+## T3 — Conversation (per-user memory)
 
-**What it is.** The history of user/assistant turns within a single conversational session (ChatPanel or ContextualAssistant).
+**What it is.** Per-user conversational memory spanning chat sessions plus a self-recall channel for skills:
+- **userHistory** — recent chat messages this user exchanged with the assistant (ChatPanel + ContextualAssistant), across sessions.
+- **recentInvocations** — last N skill invocations run *for this user*, so the assistant can recall "I analyzed CHG-002 for you ten minutes ago" without a tool call.
+- **session metadata** — current sessionId + pagePath, when relevant.
 
-**Lifetime.** Until the user navigates away or the session times out.
+**Lifetime.** Persisted across restarts. Bounded retention (rolling window per user, kept indefinitely in v1; future: TTL).
 
-**Storage.** In-memory on the assistant orchestrator. Not persisted across server restarts in v1. (v2: optionally persisted per user.)
+**Storage.** Postgres `chat_messages` table (id, userId, sessionId, role, content, contextJson, createdAt) with indexes on `(userId, createdAt DESC)` and `(sessionId, createdAt)`. The `agent_invocations` table provides the recentInvocations stream.
 
-**Bounded.** Last N turns where N is sized to fit within the model's context window after T1 + T2. v1 default: last 10 turns or 8K tokens, whichever is smaller.
+**Bounded.** Each call loads up to 10 user messages + 5 invocations by default. Conservative to bound prompt size; tuneable per call via `LoadT3Options`.
 
-**Implementation.** A `conversationStore` map keyed by session ID. Cleared on disconnect. Each turn appends to the relevant session's array.
+**Privacy.** Scoped to the requesting user. Other users' chats never appear. Org-wide activity belongs in T4, not T3.
+
+**Cacheability.** Medium. The user's recent history is stable within a session window but invalidates as soon as they send a new message. Goes in the *dynamic* (non-cached) half of the prompt.
+
+**Implementation.**
+- Loader: `backend/src/services/chat-memory.ts` → `loadT3FromUser({ userId, sessionId, pagePath })` returns a `T3Context`.
+- Renderer: `backend/src/services/skills/prompt.ts` → `renderT3Context(t3)` emits two markdown sections: "Your Past Conversations With This User" and "This User's Recent AI Analysis Runs".
+- Compose: `buildSystemPrompt(ctx, { includeT3: true })` injects T3 after CACHE_BREAK_MARKER (dynamic half).
+- Persistence: `saveChatMessage()` is called by `routes/chat.ts` on every user-sent and assistant-streamed turn (assistant save is fire-and-forget after stream end).
+
+**When skills opt in.** Skills called from a chat surface can set `includeT3: true` to inherit the calling user's conversation context. Autonomous skills (triage at intake, etc.) leave T3 off — they're not user-initiated.
 
 ## T4 — Audit & KB
 
 **What it is.** Reference material an agent may need:
-- Recent audit events for the entity in scope (last 50 entries).
+- Recent audit events — either **org-wide** (used by chat to answer "what's been happening?") or **entity-scoped** (used by skills like `triage_incident` to find related changes).
 - Knowledge base articles linked to the entity (via `relatedCI` for incidents, via service for changes).
 
 **Lifetime.** Audit is append-only and indexed; KB is fetched on demand from MCP and cached for 1 hour.
 
 **Cacheable.** Audit slices are not pre-cached; they're fetched per request. KB articles are cached by URL with 1-hour TTL.
 
-**Implementation.** When a skill needs audit context (e.g. `triage_incident` looking at recent incidents on the same service), the runner fetches the relevant slice and includes it in the prompt as a structured table.
+**Implementation.**
+- Loader: `backend/src/services/chat-memory.ts` → `loadT4RecentAudit({ objectId?, objectType?, limit? })` returns a `T4Context`. Without filters, returns the most recent N events org-wide.
+- Renderer: `backend/src/services/skills/prompt.ts` → `renderT4Context(t4)` emits a "Recent System Activity" markdown section with actor + action + object + result per line.
+- Compose: `buildSystemPrompt(ctx, { includeT4: true })` injects T4 in the dynamic half (after CACHE_BREAK_MARKER).
 
 **Why not cached aggressively.** Audit changes constantly; caching would mask recent activity. KB is cached because it changes rarely.
 

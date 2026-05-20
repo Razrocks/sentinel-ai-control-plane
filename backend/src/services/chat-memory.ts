@@ -103,7 +103,7 @@ export interface LoadT4Options {
  */
 export async function loadT4RecentAudit(opts: LoadT4Options = {}): Promise<T4Context> {
   const limit = opts.limit ?? DEFAULT_AUDIT_LIMIT
-  const where: Parameters<typeof prisma.auditEvent.findMany>[0]['where'] = {}
+  const where: { objectId?: string; objectType?: LoadT4Options['objectType'] } = {}
   if (opts.objectId) where.objectId = opts.objectId
   if (opts.objectType) where.objectType = opts.objectType
 

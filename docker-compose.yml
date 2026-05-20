@@ -21,10 +21,12 @@ services:
     container_name: sentinel-backend
     ports:
       - "3001:3001"
+    # Load secrets from backend/.env (gitignored). Container-only overrides below.
+    env_file:
+      - ./backend/.env
     environment:
+      # Override DATABASE_URL because in-container Postgres host is "postgres" not "localhost"
       DATABASE_URL: postgresql://sentinel:sentinel_dev@postgres:5432/sentinel
-      JWT_SECRET: dev-secret-change-in-production
-      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       PORT: "3001"
       HOST: "0.0.0.0"
       CORS_ORIGIN: "http://localhost:5173"

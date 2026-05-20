@@ -19,3 +19,4 @@ export { EvidenceDrawer } from './EvidenceDrawer';
 export { DataTable } from './DataTable';
 export { BlastRadiusGraphPanel } from './BlastRadiusGraphPanel';
 export { ContextualAssistant } from './ContextualAssistant';
+export { ReanalyzeButton } from './ReanalyzeButton';

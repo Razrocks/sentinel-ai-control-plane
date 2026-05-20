@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify'
 import { requireAuth } from '../middleware/auth.js'
 import { prisma } from '../lib/prisma.js'
+import { config } from '../config.js'
 import {
   buildChatSystemPrompt,
   buildContextualSystemPrompt,
@@ -54,12 +55,17 @@ export async function chatRoutes(app: FastifyInstance) {
       systemPrompt = buildChatSystemPrompt(role, pagePath)
     }
 
-    // Set SSE headers and hijack the response
+    // Set SSE headers and hijack the response.
+    // CORS-with-credentials requires a specific origin echo, NOT "*".
+    // The Fastify CORS plugin's headers don't reach reply.raw, so we set them manually.
+    const requestOrigin = request.headers.origin as string | undefined
+    const allowedOrigin = requestOrigin && requestOrigin === config.corsOrigin ? requestOrigin : config.corsOrigin
     reply.raw.writeHead(200, {
       'Content-Type': 'text/event-stream',
       'Cache-Control': 'no-cache',
       'Connection': 'keep-alive',
-      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Origin': allowedOrigin,
+      'Access-Control-Allow-Credentials': 'true',
       'X-Accel-Buffering': 'no',
     })
 

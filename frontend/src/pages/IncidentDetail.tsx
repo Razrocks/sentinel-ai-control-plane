@@ -22,7 +22,8 @@ import {
   Zap,
 } from 'lucide-react'
 import { useIncident } from '@/hooks/useData'
-import { useIncidentUpdateStatus } from '@/hooks/useMutations'
+import { useIncidentUpdateStatus, useTriageIncidentAgent } from '@/hooks/useMutations'
+import { ReanalyzeButton } from '@/components/shared'
 import { RiskBadge, SystemChip, ActionGuardModal, ContextualAssistant } from '@/components/shared'
 import { formatDate } from '@/lib/utils'
 import { useRole } from '@/lib/roles'
@@ -181,6 +182,7 @@ export default function IncidentDetail() {
 
   const { data: incident, isLoading } = useIncident(id!)
   const updateStatus = useIncidentUpdateStatus()
+  const triageAgent = useTriageIncidentAgent()
 
   if (isLoading) {
     return (
@@ -579,7 +581,23 @@ export default function IncidentDetail() {
         </div>
 
         {/* ── Right: Action Rail ── */}
-        <div>
+        <div className="space-y-4">
+          {/* AI Re-analyze */}
+          <div className="bg-surface rounded-lg border border-border p-4 space-y-3">
+            <h3 className="text-xs font-medium text-text-muted uppercase tracking-wider">AI Analysis</h3>
+            <ReanalyzeButton
+              kind="incident"
+              entityIdOrTicket={incident.incidentId}
+              userRole={role}
+              mutate={triageAgent.mutate}
+              isPending={triageAgent.isPending}
+              isError={triageAgent.isError}
+              isSuccess={triageAgent.isSuccess}
+              error={triageAgent.error}
+              data={triageAgent.data}
+            />
+          </div>
+
           <div className="bg-surface rounded-lg border border-border p-4 space-y-4">
             <h3 className="text-xs font-medium text-text-muted uppercase tracking-wider">Actions <span className="text-accent">· {config.label}</span></h3>
 

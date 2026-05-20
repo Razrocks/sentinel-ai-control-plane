@@ -23,9 +23,9 @@ import {
   Globe,
 } from 'lucide-react'
 import { useAccessRequest } from '@/hooks/useData'
-import { useAccessRequestDecide } from '@/hooks/useMutations'
+import { useAccessRequestDecide, useReviewAccessRequestAgent } from '@/hooks/useMutations'
 import type { AccessRequest } from '@/types'
-import { RiskBadge, ApprovalBadge, PolicyBadge, SystemChip, ActionGuardModal, ContextualAssistant } from '@/components/shared'
+import { RiskBadge, ApprovalBadge, PolicyBadge, SystemChip, ActionGuardModal, ContextualAssistant, ReanalyzeButton } from '@/components/shared'
 import { formatDate } from '@/lib/utils'
 import { useRole } from '@/lib/roles'
 
@@ -201,6 +201,7 @@ export default function AccessRequestDetail() {
 
   const { data: request, isLoading } = useAccessRequest(id!)
   const accessDecide = useAccessRequestDecide()
+  const reviewAgent = useReviewAccessRequestAgent()
 
   if (isLoading) {
     return (
@@ -619,6 +620,22 @@ export default function AccessRequestDetail() {
 
         {/* ---- RIGHT: Action rail ---- */}
         <div className="space-y-3">
+          {/* AI Re-analyze */}
+          <div className="bg-surface rounded-lg border border-border p-4 space-y-3">
+            <h3 className="text-xs font-medium text-text-muted uppercase tracking-wider">AI Analysis</h3>
+            <ReanalyzeButton
+              kind="access_request"
+              entityIdOrTicket={request.requestId}
+              userRole={role}
+              mutate={reviewAgent.mutate}
+              isPending={reviewAgent.isPending}
+              isError={reviewAgent.isError}
+              isSuccess={reviewAgent.isSuccess}
+              error={reviewAgent.error}
+              data={reviewAgent.data}
+            />
+          </div>
+
           {/* Available Now */}
           <div className="bg-surface rounded-lg border border-border p-4 space-y-3">
             <h3 className="text-xs font-medium text-text-muted uppercase tracking-wider">

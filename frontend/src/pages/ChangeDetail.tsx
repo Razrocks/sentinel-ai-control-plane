@@ -34,7 +34,8 @@ import {
   Plus,
 } from 'lucide-react'
 import { useChange } from '@/hooks/useData'
-import { useChangeExecute, useChangeSimulate, useChangeEscalate } from '@/hooks/useMutations'
+import { useChangeExecute, useChangeSimulate, useChangeEscalate, useTriageChangeAgent } from '@/hooks/useMutations'
+import { ReanalyzeButton } from '@/components/shared'
 import {
   RiskBadge,
   ApprovalBadge,
@@ -354,6 +355,7 @@ export default function ChangeDetail() {
   const executeChange = useChangeExecute()
   const simulateChange = useChangeSimulate()
   const escalateChange = useChangeEscalate()
+  const triageAgent = useTriageChangeAgent()
 
   if (isLoading) {
     return (
@@ -1006,6 +1008,24 @@ export default function ChangeDetail() {
 
         {/* Right: Actions */}
         <div className="space-y-4">
+          {/* AI Re-analyze */}
+          <div className="bg-surface rounded-lg border border-border p-4 space-y-3">
+            <h3 className="text-xs font-medium text-text-muted uppercase tracking-wider">
+              AI Analysis
+            </h3>
+            <ReanalyzeButton
+              kind="change"
+              entityIdOrTicket={change.ticketId}
+              userRole={role}
+              mutate={triageAgent.mutate}
+              isPending={triageAgent.isPending}
+              isError={triageAgent.isError}
+              isSuccess={triageAgent.isSuccess}
+              error={triageAgent.error}
+              data={triageAgent.data}
+            />
+          </div>
+
           {/* Available Now */}
           {availableActions.length > 0 && (
             <div className="bg-surface rounded-lg border border-border p-4 space-y-3">

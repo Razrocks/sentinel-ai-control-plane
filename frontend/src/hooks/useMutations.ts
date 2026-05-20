@@ -171,3 +171,90 @@ export function useIncidentUpdateStatus() {
     },
   })
 }
+
+// ─── Agent Re-analyze Mutations ─────────────────────────
+// Trigger an agent end-to-end via the /api/agents/* routes.
+// Returns the agent's full structured result; UI shows summary toast.
+
+interface AgentTriageResult {
+  // ChangeTriageAgent
+  changeId?: string
+  ticketId?: string
+  appliedRiskLevel?: string
+  blastRadiusItemsWritten?: number
+  // IncidentTriageAgent
+  incidentId?: string
+  appliedSeverity?: string
+  fieldsUpdated?: string[]
+  // AccessReviewerAgent
+  requestId?: string
+  // ApprovalRouterAgent
+  approvalId?: string
+  coApprovalsWritten?: number
+  filerOmitted?: number
+  decisionImpactWritten?: boolean
+  // Common
+  assess?: { status: string; output?: unknown; errorMessage?: string }
+  blastRadius?: { status: string; output?: unknown; errorMessage?: string }
+  triage?: { status: string; output?: unknown; errorMessage?: string }
+  evaluate?: { status: string; output?: unknown; errorMessage?: string }
+  route?: { status: string; output?: unknown; errorMessage?: string }
+  impact?: { status: string; output?: unknown; errorMessage?: string }
+}
+
+/**
+ * Re-run ChangeTriageAgent on a Change. Calls assess_change + analyze_blast_radius.
+ */
+export function useTriageChangeAgent() {
+  const queryClient = useQueryClient()
+  return useMutation<AgentTriageResult, Error, string>({
+    mutationFn: async (changeIdOrTicket) => {
+      return apiFetch<AgentTriageResult>(`/agents/triage-change/${changeIdOrTicket}`, {
+        method: 'POST',
+        body: JSON.stringify({}),
+      })
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['changes'] })
+      queryClient.invalidateQueries({ queryKey: ['auditEvents'] })
+    },
+  })
+}
+
+/**
+ * Re-run IncidentTriageAgent on an Incident. Calls triage_incident.
+ */
+export function useTriageIncidentAgent() {
+  const queryClient = useQueryClient()
+  return useMutation<AgentTriageResult, Error, string>({
+    mutationFn: async (incidentIdOrTicket) => {
+      return apiFetch<AgentTriageResult>(`/agents/triage-incident/${incidentIdOrTicket}`, {
+        method: 'POST',
+        body: JSON.stringify({}),
+      })
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['incidents'] })
+      queryClient.invalidateQueries({ queryKey: ['auditEvents'] })
+    },
+  })
+}
+
+/**
+ * Re-run AccessReviewerAgent on an AccessRequest. Calls evaluate_access_request.
+ */
+export function useReviewAccessRequestAgent() {
+  const queryClient = useQueryClient()
+  return useMutation<AgentTriageResult, Error, string>({
+    mutationFn: async (requestIdOrTicket) => {
+      return apiFetch<AgentTriageResult>(`/agents/review-access-request/${requestIdOrTicket}`, {
+        method: 'POST',
+        body: JSON.stringify({}),
+      })
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['accessRequests'] })
+      queryClient.invalidateQueries({ queryKey: ['auditEvents'] })
+    },
+  })
+}

@@ -23,6 +23,23 @@ import { prisma } from '../../lib/prisma.js'
 import { getSkill, hasSkill } from './registry.js'
 import { splitOnCacheBreak } from './prompt.js'
 import { validateReferences, violationsAreBlocking } from './validate-references.js'
+import {
+  withRetry,
+  withTimeout,
+  breakerOpen,
+  recordBreakerSuccess,
+  recordBreakerFailure,
+  consumeRateToken,
+  checkCostCap,
+  getFallbackModel,
+  CircuitOpenError,
+  TimeoutError,
+  RateLimitError,
+  CostCapError,
+  isTransientError,
+} from './reliability.js'
+
+const DEFAULT_TIMEOUT_MS = 30_000 // 30s hard cap per skill call (C4)
 import type {
   RunnerResult,
   RunnerStatus,
@@ -135,6 +152,9 @@ export async function runSkill<TInput = unknown, TOutput = unknown>(
   const spec = getSkill<TInput, TOutput>(name)
   const actor = options.actor ?? ctx.actor ?? 'system'
 
+  // Track the model actually used (may switch to fallback below).
+  let usedModel = spec.model
+
   // 1. Validate input
   const inputCheck = spec.inputSchema.safeParse(input)
   if (!inputCheck.success) {
@@ -144,7 +164,7 @@ export async function runSkill<TInput = unknown, TOutput = unknown>(
       invocationId = await writeProvenance({
         skill: name,
         kind: spec.kind,
-        model: spec.model,
+        model: usedModel,
         promptHash: '',
         tokensIn: 0,
         tokensOut: 0,
@@ -189,7 +209,38 @@ export async function runSkill<TInput = unknown, TOutput = unknown>(
     systemBlocks.push({ type: 'text', text: dynamicBlock })
   }
 
-  // 3. Call model
+  // 3. Pre-flight reliability gates (C5 rate limit, C6 cost cap)
+  try {
+    consumeRateToken(actor)
+    await checkCostCap(actor)
+  } catch (err) {
+    const errMsg = err instanceof Error ? err.message : String(err)
+    let invocationId: string | undefined
+    if (!options.skipProvenance) {
+      invocationId = await writeProvenance({
+        skill: name,
+        kind: spec.kind,
+        model: usedModel,
+        promptHash,
+        tokensIn: 0,
+        tokensOut: 0,
+        cached: false,
+        latencyMs: 0,
+        confidence: null,
+        status: 'error',
+        errorMessage: errMsg,
+        actor,
+      })
+    }
+    return {
+      status: 'error',
+      errorMessage: errMsg,
+      invocationId,
+      metrics: { tokensIn: 0, tokensOut: 0, latencyMs: 0, cached: false },
+    }
+  }
+
+  // 4. Call model with retry + timeout + circuit breaker + model fallback
   const client = getClient()
   const startedAt = Date.now()
   let rawText = ''
@@ -199,14 +250,55 @@ export async function runSkill<TInput = unknown, TOutput = unknown>(
   let cacheReadTokens = 0
   let cacheWriteTokens = 0
 
+  const callModel = async (model: string) => {
+    const breakerKey = `${model}:${name}`
+    if (breakerOpen(breakerKey)) {
+      throw new CircuitOpenError(breakerKey)
+    }
+    return await withRetry(
+      () =>
+        withTimeout(
+          () =>
+            client.messages.create({
+              model,
+              max_tokens: spec.maxOutputTokens,
+              temperature: spec.temperature,
+              system: systemBlocks,
+              messages: [{ role: 'user', content: user }],
+            }),
+          DEFAULT_TIMEOUT_MS,
+        ),
+      {
+        maxAttempts: 3,
+        baseDelayMs: 500,
+        maxDelayMs: 5000,
+        shouldRetry: (err, attempt) => {
+          // Don't retry timeouts past the first — they're slow problems, not transient
+          if (err instanceof TimeoutError) return attempt < 2
+          return isTransientError(err) && attempt < 3
+        },
+      },
+    )
+  }
+
   try {
-    const response = await client.messages.create({
-      model: spec.model,
-      max_tokens: spec.maxOutputTokens,
-      temperature: spec.temperature,
-      system: systemBlocks,
-      messages: [{ role: 'user', content: user }],
-    })
+    let response: Awaited<ReturnType<typeof client.messages.create>>
+    try {
+      response = await callModel(spec.model)
+      recordBreakerSuccess(`${spec.model}:${name}`)
+    } catch (primaryErr) {
+      // C7 model fallback on persistent failure of primary
+      const fallback = getFallbackModel(spec.model)
+      if (fallback && (isTransientError(primaryErr) || primaryErr instanceof TimeoutError || primaryErr instanceof CircuitOpenError)) {
+        recordBreakerFailure(`${spec.model}:${name}`)
+        usedModel = fallback
+        response = await callModel(fallback)
+        recordBreakerSuccess(`${fallback}:${name}`)
+      } else {
+        recordBreakerFailure(`${spec.model}:${name}`)
+        throw primaryErr
+      }
+    }
 
     tokensIn = response.usage?.input_tokens ?? 0
     tokensOut = response.usage?.output_tokens ?? 0
@@ -229,7 +321,7 @@ export async function runSkill<TInput = unknown, TOutput = unknown>(
       invocationId = await writeProvenance({
         skill: name,
         kind: spec.kind,
-        model: spec.model,
+        model: usedModel,
         promptHash,
         tokensIn: 0,
         tokensOut: 0,
@@ -251,7 +343,7 @@ export async function runSkill<TInput = unknown, TOutput = unknown>(
 
   const latencyMs = Date.now() - startedAt
 
-  // 4. Parse JSON
+  // 5. Parse JSON
   const cleaned = stripCodeFences(rawText)
   let parsed: unknown
   try {
@@ -263,7 +355,7 @@ export async function runSkill<TInput = unknown, TOutput = unknown>(
       invocationId = await writeProvenance({
         skill: name,
         kind: spec.kind,
-        model: spec.model,
+        model: usedModel,
         promptHash,
         tokensIn,
         tokensOut,
@@ -293,7 +385,7 @@ export async function runSkill<TInput = unknown, TOutput = unknown>(
       invocationId = await writeProvenance({
         skill: name,
         kind: spec.kind,
-        model: spec.model,
+        model: usedModel,
         promptHash,
         tokensIn,
         tokensOut,
@@ -327,7 +419,7 @@ export async function runSkill<TInput = unknown, TOutput = unknown>(
       invocationId = await writeProvenance({
         skill: name,
         kind: spec.kind,
-        model: spec.model,
+        model: usedModel,
         promptHash,
         tokensIn,
         tokensOut,
@@ -357,7 +449,7 @@ export async function runSkill<TInput = unknown, TOutput = unknown>(
     invocationId = await writeProvenance({
       skill: name,
       kind: spec.kind,
-      model: spec.model,
+      model: usedModel,
       promptHash,
       tokensIn,
       tokensOut,

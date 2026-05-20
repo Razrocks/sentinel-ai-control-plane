@@ -155,15 +155,54 @@ export interface T2Context {
 }
 
 /**
+ * T3 — conversation / user-bound memory.
+ *
+ * Per-user state that persists across sessions. Used by:
+ *   - Chat surfaces (ChatPanel, ContextualAssistant) — supplies prior turns
+ *     for continuity ("you said earlier…").
+ *   - Skills invoked from a chat conversation — same user context.
+ *
+ * Privacy: this tier is scoped to the acting user. It does NOT contain other
+ * users' chat history. System-wide activity belongs in T4 (audit slice).
+ *
+ * Cacheability: medium. User history is stable enough to cache for ~5 min,
+ * but invalidates whenever the user sends a new message.
+ */
+export interface T3Context {
+  /** Recent chat messages exchanged with this user (oldest first). */
+  userHistory?: Array<{
+    role: 'user' | 'assistant'
+    content: string
+    createdAt: string
+    sessionId: string
+  }>
+  /** Recent skill invocations performed FOR this user (self-recall). */
+  recentInvocations?: Array<{
+    skill: string
+    status: string
+    confidence: number | null
+    createdAt: string
+  }>
+  /** Optional session metadata (id, page path, etc.). */
+  session?: {
+    sessionId: string
+    pagePath?: string
+  }
+}
+
+/**
  * T4 — slice of recent audit history relevant to the skill's question.
- * E.g. last N events on the same service for incident triage.
+ * E.g. last N events on the same service for incident triage, or org-wide
+ * recent activity for "what's been happening?" chat queries.
  */
 export interface T4Context {
   recentAuditEvents?: Array<{
     timestamp: string
     actor: string
     action: string
+    objectType?: string
     objectId: string
+    objectTitle?: string
     result: string
   }>
 }
@@ -190,6 +229,7 @@ export interface SkillContext {
   traceId?: string
   t1?: T1Context
   t2?: T2Context
+  t3?: T3Context
   t4?: T4Context
   t5?: T5Context
 }

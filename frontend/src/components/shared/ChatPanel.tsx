@@ -242,6 +242,16 @@ export function ChatPanel() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
+  // Stable session id per browser tab; backend uses this to group cross-session memory.
+  const [sessionId] = useState(() => {
+    const k = 'sentinel.chat.global.sessionId'
+    let v = sessionStorage.getItem(k)
+    if (!v) {
+      v = `chat-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+      sessionStorage.setItem(k, v)
+    }
+    return v
+  })
   const { role, config } = useRole()
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -305,7 +315,7 @@ export function ChatPanel() {
 
     const controller = await chatStream(
       allMessages,
-      { pagePath: currentPath },
+      { pagePath: currentPath, sessionId },
       // onChunk — append text to the assistant message
       (chunk) => {
         setMessages(prev =>

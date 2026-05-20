@@ -432,3 +432,35 @@ model FreezeWindow {
   @@index([isActive])
   @@map("freeze_windows")
 }
+
+// ─── Cross-session chat memory ──────────────────────────
+
+enum ChatMessageRole {
+  user
+  assistant
+}
+
+/// Stored chat messages. Cross-session memory: chat route can load this user's
+/// recent messages on each request and inject into the system prompt so Claude
+/// remembers past conversations.
+///
+/// Privacy: this table is per-user (userId). Chat does NOT see other users'
+/// private chats. System-wide audit_events and agent_invocations remain the
+/// shared source of "what's been done."
+model ChatMessage {
+  id        String          @id @default(cuid())
+  userId    String          @map("user_id")
+  /// Stable session identifier. Frontend can pass the same sessionId across
+  /// a single conversation; multiple sessions per user are normal.
+  sessionId String          @map("session_id")
+  role      ChatMessageRole
+  content   String
+  /// Optional context fragment the message was sent with (pagePath, entityType, etc.).
+  /// Stored as JSON string for forward compatibility without schema churn.
+  contextJson String?       @map("context_json")
+  createdAt DateTime        @default(now()) @map("created_at")
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([sessionId, createdAt])
+  @@map("chat_messages")
+}

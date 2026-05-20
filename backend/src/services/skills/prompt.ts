@@ -18,6 +18,7 @@ import type {
   T1dOrgCatalog,
   T1eSkillRegistry,
   T2Context,
+  T3Context,
   T4Context,
   T5Context,
 } from './types.js'
@@ -179,15 +180,49 @@ export function renderT2Context(t2: T2Context): string {
   return sections.join('\n')
 }
 
+// ─── T3 — conversation memory (per-user) ────────────────
+
+export function renderT3Context(t3: T3Context): string {
+  const sections: string[] = []
+
+  if (t3.userHistory && t3.userHistory.length > 0) {
+    sections.push('## Your Past Conversations With This User')
+    sections.push(
+      'Last messages exchanged with this user (oldest first), across sessions. Use them for continuity — if they reference something earlier, you should remember it.',
+    )
+    for (const m of t3.userHistory) {
+      const who = m.role === 'user' ? 'User' : 'You'
+      const preview = m.content.length > 400 ? m.content.slice(0, 400) + '…' : m.content
+      sections.push(`- **${who}** [${m.createdAt}]: ${preview}`)
+    }
+  }
+
+  if (t3.recentInvocations && t3.recentInvocations.length > 0) {
+    sections.push('\n## This User\'s Recent AI Analysis Runs')
+    sections.push(
+      'Skills you (the AI) ran for this user recently. Reference them if they ask about past analysis.',
+    )
+    for (const i of t3.recentInvocations) {
+      const conf = i.confidence !== null ? ` confidence=${i.confidence.toFixed(2)}` : ''
+      sections.push(`- ${i.skill} [${i.createdAt}] status=${i.status}${conf}`)
+    }
+  }
+
+  return sections.length === 0 ? '' : sections.join('\n')
+}
+
 // ─── T4 — audit slice ───────────────────────────────────
 
 export function renderT4Context(t4: T4Context): string {
   if (!t4.recentAuditEvents || t4.recentAuditEvents.length === 0) return ''
   return [
-    '## Recent Audit Events',
-    ...t4.recentAuditEvents.map(
-      (e) => `- [${e.timestamp}] ${e.actor} ${e.action} on ${e.objectId} → ${e.result}`,
-    ),
+    '## Recent System Activity',
+    'Latest actions across the org. Use these to answer "what\'s been happening?" / "who approved X?" — but do NOT invent details not present here.',
+    ...t4.recentAuditEvents.map((e) => {
+      const obj = e.objectTitle ? `${e.objectId} (${e.objectTitle})` : e.objectId
+      const type = e.objectType ? ` ${e.objectType}` : ''
+      return `- [${e.timestamp}] **${e.actor}** ${e.action} on${type} ${obj} → ${e.result}`
+    }),
   ].join('\n')
 }
 
@@ -224,6 +259,8 @@ export interface SystemPromptOptions {
   includeSkillRegistry?: boolean
   /** Include T2 extras if present. */
   includeT2?: boolean
+  /** Include T3 conversation memory (per-user chat history + invocations). Default: false; chat surfaces opt in. */
+  includeT3?: boolean
   /** Include T4 audit slice if present. */
   includeT4?: boolean
   /** Include T5 temporal block if present. */
@@ -242,7 +279,8 @@ export const CACHE_BREAK_MARKER = '<<<SENTINEL_CACHE_BREAK>>>'
 /**
  * Compose a system prompt by joining the requested context tiers.
  * Sections before CACHE_BREAK_MARKER are stable per skill (eligible for cache);
- * sections after vary per call (T2 entity extras, T4 audit slice, T5 temporal).
+ * sections after vary per call (T2 entity extras, T3 conversation memory,
+ * T4 audit slice, T5 temporal).
  *
  * Order (cached first, dynamic last):
  *   1. [cached]   T1.a identity
@@ -253,8 +291,9 @@ export const CACHE_BREAK_MARKER = '<<<SENTINEL_CACHE_BREAK>>>'
  *   6. [cached]   Task instructions
  *   -- CACHE_BREAK_MARKER --
  *   7. [dynamic]  T2 entity extras
- *   8. [dynamic]  T4 audit slice
- *   9. [dynamic]  T5 temporal
+ *   8. [dynamic]  T3 conversation memory (per-user chat history + invocations)
+ *   9. [dynamic]  T4 audit slice (system-wide activity)
+ *  10. [dynamic]  T5 temporal
  */
 export function buildSystemPrompt(ctx: SkillContext, opts: SystemPromptOptions = {}): string {
   const cached: string[] = []
@@ -267,6 +306,7 @@ export function buildSystemPrompt(ctx: SkillContext, opts: SystemPromptOptions =
     orgCatalogServices,
     includeSkillRegistry = false,
     includeT2 = true,
+    includeT3 = false,
     includeT4 = true,
     includeT5 = true,
     taskInstructions,
@@ -296,6 +336,10 @@ export function buildSystemPrompt(ctx: SkillContext, opts: SystemPromptOptions =
   if (includeT2 && ctx.t2) {
     const t2 = renderT2Context(ctx.t2)
     if (t2) dynamic.push(t2)
+  }
+  if (includeT3 && ctx.t3) {
+    const t3 = renderT3Context(ctx.t3)
+    if (t3) dynamic.push(t3)
   }
   if (includeT4 && ctx.t4) {
     const t4 = renderT4Context(ctx.t4)

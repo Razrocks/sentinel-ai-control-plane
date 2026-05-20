@@ -8,6 +8,12 @@ import {
   streamChat,
   isConfigured,
 } from '../services/claude.js'
+import {
+  loadT3FromUser,
+  loadT4RecentAudit,
+  saveChatMessage,
+} from '../services/chat-memory.js'
+import { renderT3Context, renderT4Context } from '../services/skills/index.js'
 
 export async function chatRoutes(app: FastifyInstance) {
   // POST /api/chat — streaming Claude response via SSE
@@ -26,6 +32,8 @@ export async function chatRoutes(app: FastifyInstance) {
         pagePath?: string
         entityType?: 'change' | 'incident' | 'access_request'
         entityId?: string
+        /** Stable id for this conversation. Frontend should generate once + reuse. */
+        sessionId?: string
       }
     }
 
@@ -40,6 +48,25 @@ export async function chatRoutes(app: FastifyInstance) {
     const context = body.context || {}
     const role = request.user!.role
     const pagePath = context.pagePath || '/'
+    const userId = request.user!.userId
+    // Frontend may pass a sessionId; if not, fall back to user-scoped pseudo-session.
+    const sessionId = context.sessionId || `default-${userId}`
+
+    // Load T3 (per-user conversation memory) + T4 (org-wide audit slice).
+    // Both align with the documented memory ontology (see docs/agents/memory-model.md).
+    // Errors are non-fatal — chat still works without memory.
+    let memorySection = ''
+    try {
+      const [t3, t4] = await Promise.all([
+        loadT3FromUser({ userId, sessionId, pagePath }),
+        loadT4RecentAudit({ limit: 15 }),
+      ])
+      const t3Block = renderT3Context(t3)
+      const t4Block = renderT4Context(t4)
+      memorySection = [t3Block, t4Block].filter(Boolean).join('\n\n')
+    } catch (err) {
+      app.log.warn({ err }, 'chat memory load failed; continuing without memory')
+    }
 
     // Build system prompt — contextual if entity provided, otherwise general
     let systemPrompt: string
@@ -53,6 +80,30 @@ export async function chatRoutes(app: FastifyInstance) {
       }
     } else {
       systemPrompt = buildChatSystemPrompt(role, pagePath)
+    }
+
+    // Append memory block at end of system prompt so it doesn't interfere
+    // with the cached identity/role portion. Memory varies per call → stays
+    // outside any future cache breakpoint.
+    if (memorySection) {
+      systemPrompt = `${systemPrompt}\n\n${memorySection}`
+    }
+
+    // Persist the latest user message (most recent in array) BEFORE streaming.
+    // Saving the assistant response happens after the stream completes.
+    const lastUserMsg = [...messages].reverse().find((m) => m.role === 'user')
+    if (lastUserMsg) {
+      try {
+        await saveChatMessage({
+          userId,
+          sessionId,
+          role: 'user',
+          content: lastUserMsg.content,
+          context: { pagePath, entityType: context.entityType, entityId: context.entityId },
+        })
+      } catch (err) {
+        app.log.warn({ err }, 'chat memory save (user msg) failed; continuing')
+      }
     }
 
     // Set SSE headers and hijack the response.
@@ -71,8 +122,11 @@ export async function chatRoutes(app: FastifyInstance) {
 
     try {
       const stream = streamChat(systemPrompt, messages)
+      // Accumulate assistant text for cross-session memory persistence on stream end.
+      let assistantText = ''
 
       stream.on('text', (text) => {
+        assistantText += text
         reply.raw.write(`event: chunk\ndata: ${JSON.stringify({ content: text })}\n\n`)
       })
 
@@ -86,6 +140,17 @@ export async function chatRoutes(app: FastifyInstance) {
       stream.on('end', () => {
         reply.raw.write(`event: done\ndata: {}\n\n`)
         reply.raw.end()
+        // Fire-and-forget memory save. We don't want to block the response,
+        // and failures here shouldn't bubble back to the user (already done).
+        if (assistantText) {
+          saveChatMessage({
+            userId,
+            sessionId,
+            role: 'assistant',
+            content: assistantText,
+            context: { pagePath, entityType: context.entityType, entityId: context.entityId },
+          }).catch((err) => app.log.warn({ err }, 'chat memory save (assistant msg) failed'))
+        }
       })
 
       // Clean up if client disconnects mid-stream

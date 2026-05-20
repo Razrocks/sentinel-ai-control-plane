@@ -41,6 +41,8 @@ export interface ChatContext {
   pagePath: string
   entityType?: 'change' | 'incident' | 'access_request'
   entityId?: string
+  /** Stable id per conversation. Server uses this for cross-session memory grouping. */
+  sessionId?: string
 }
 
 export async function chatStream(

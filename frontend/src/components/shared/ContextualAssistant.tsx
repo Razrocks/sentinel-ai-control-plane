@@ -87,6 +87,16 @@ export function ContextualAssistant({ entityType, entityId, entityTitle, quickAc
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
+  // Session id scoped to the entity being viewed; persists across detail-page revisits.
+  const [sessionId] = useState(() => {
+    const k = `sentinel.chat.entity.${entityType}.${entityId}`
+    let v = sessionStorage.getItem(k)
+    if (!v) {
+      v = `chat-${entityType}-${entityId}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
+      sessionStorage.setItem(k, v)
+    }
+    return v
+  })
   const { role, config } = useRole()
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
@@ -141,6 +151,7 @@ export function ContextualAssistant({ entityType, entityId, entityTitle, quickAc
         pagePath: window.location.pathname,
         entityType: entityType === 'access_request' ? 'access_request' : entityType,
         entityId,
+        sessionId,
       },
       // onChunk
       (chunk) => {

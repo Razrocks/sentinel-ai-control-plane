@@ -1,11 +1,11 @@
 import { FastifyInstance } from 'fastify'
+import Anthropic from '@anthropic-ai/sdk'
 import { requireAuth } from '../middleware/auth.js'
 import { prisma } from '../lib/prisma.js'
 import { config } from '../config.js'
 import {
   buildChatSystemPrompt,
   buildContextualSystemPrompt,
-  streamChat,
   isConfigured,
 } from '../services/claude.js'
 import {
@@ -14,6 +14,18 @@ import {
   saveChatMessage,
 } from '../services/chat-memory.js'
 import { renderT3Context, renderT4Context } from '../services/skills/index.js'
+import { CHAT_TOOLS, executeTool } from '../services/chat-tools.js'
+
+const MAX_TOOL_ITERATIONS = 5
+const CHAT_MODEL = 'claude-sonnet-4-20250514'
+const CHAT_MAX_TOKENS = 1024
+
+// Lazy Anthropic client (config-checked before use)
+let _client: Anthropic | null = null
+function getClient(): Anthropic {
+  if (!_client) _client = new Anthropic({ apiKey: config.anthropicApiKey })
+  return _client
+}
 
 export async function chatRoutes(app: FastifyInstance) {
   // POST /api/chat — streaming Claude response via SSE
@@ -120,52 +132,109 @@ export async function chatRoutes(app: FastifyInstance) {
       'X-Accel-Buffering': 'no',
     })
 
+    // Hijack BEFORE async work so connection stays open.
+    reply.hijack()
+
+    let aborted = false
+    request.raw.on('close', () => {
+      aborted = true
+    })
+
     try {
-      const stream = streamChat(systemPrompt, messages)
-      // Accumulate assistant text for cross-session memory persistence on stream end.
-      let assistantText = ''
+      const client = getClient()
+      // Convert incoming messages to Anthropic typed shape; allow content as string OR block array.
+      const workingMessages: Array<Anthropic.MessageParam> = messages.map((m) => ({
+        role: m.role,
+        content: m.content,
+      }))
 
-      stream.on('text', (text) => {
-        assistantText += text
-        reply.raw.write(`event: chunk\ndata: ${JSON.stringify({ content: text })}\n\n`)
-      })
+      let finalText = ''
+      let toolIterations = 0
 
-      stream.on('error', (error) => {
-        const message = error instanceof Error ? error.message : 'Stream error'
-        app.log.error(error, 'Claude stream error')
-        reply.raw.write(`event: error\ndata: ${JSON.stringify({ message })}\n\n`)
-        reply.raw.end()
-      })
+      // Tool-use loop: call model with tools enabled. If response contains
+      // tool_use blocks, execute them and feed results back. Loop until
+      // stop_reason = end_turn or max iterations.
+      while (toolIterations < MAX_TOOL_ITERATIONS && !aborted) {
+        const response = await client.messages.create({
+          model: CHAT_MODEL,
+          max_tokens: CHAT_MAX_TOKENS,
+          system: systemPrompt,
+          tools: CHAT_TOOLS as unknown as Anthropic.Tool[],
+          messages: workingMessages,
+        })
 
-      stream.on('end', () => {
-        reply.raw.write(`event: done\ndata: {}\n\n`)
-        reply.raw.end()
-        // Fire-and-forget memory save. We don't want to block the response,
-        // and failures here shouldn't bubble back to the user (already done).
-        if (assistantText) {
-          saveChatMessage({
-            userId,
-            sessionId,
-            role: 'assistant',
-            content: assistantText,
-            context: { pagePath, entityType: context.entityType, entityId: context.entityId },
-          }).catch((err) => app.log.warn({ err }, 'chat memory save (assistant msg) failed'))
+        // Accumulate any text emitted in this turn (interim or final).
+        const turnText = response.content
+          .filter((b): b is Anthropic.TextBlock => b.type === 'text')
+          .map((b) => b.text)
+          .join('')
+        if (turnText) {
+          finalText += (finalText ? '\n\n' : '') + turnText
         }
-      })
 
-      // Clean up if client disconnects mid-stream
-      request.raw.on('close', () => {
-        stream.abort()
-      })
+        // If stop reason wasn't tool_use, we have the final answer.
+        if (response.stop_reason !== 'tool_use') {
+          break
+        }
+
+        // Collect tool_use blocks
+        const toolUses = response.content.filter(
+          (b): b is Anthropic.ToolUseBlock => b.type === 'tool_use',
+        )
+        if (toolUses.length === 0) break
+
+        // Append assistant turn (full content, including tool_use blocks)
+        workingMessages.push({ role: 'assistant', content: response.content })
+
+        // Execute tools, build tool_result blocks for the next user turn
+        const toolResultBlocks: Anthropic.ToolResultBlockParam[] = []
+        for (const tu of toolUses) {
+          if (aborted) break
+          app.log.info({ tool: tu.name, input: tu.input }, 'chat tool call')
+          const result = await executeTool(tu.name, tu.input as Record<string, unknown>)
+          toolResultBlocks.push({
+            type: 'tool_result',
+            tool_use_id: tu.id,
+            content: result.content,
+            is_error: result.isError ?? false,
+          })
+        }
+        workingMessages.push({ role: 'user', content: toolResultBlocks })
+        toolIterations++
+      }
+
+      if (aborted) {
+        reply.raw.end()
+        return
+      }
+
+      // Emit final answer as one chunk (tool-loop architecture; not token-streamed).
+      // UI still receives event: chunk + event: done → no client change needed.
+      if (!finalText) {
+        finalText = '(no response)'
+      }
+      reply.raw.write(`event: chunk\ndata: ${JSON.stringify({ content: finalText })}\n\n`)
+      reply.raw.write(`event: done\ndata: {}\n\n`)
+      reply.raw.end()
+
+      // Persist assistant turn fire-and-forget
+      saveChatMessage({
+        userId,
+        sessionId,
+        role: 'assistant',
+        content: finalText,
+        context: { pagePath, entityType: context.entityType, entityId: context.entityId },
+      }).catch((err) => app.log.warn({ err }, 'chat memory save (assistant msg) failed'))
     } catch (error) {
-      const message = error instanceof Error ? error.message : 'Failed to start stream'
-      app.log.error(error, 'Claude stream init error')
-      reply.raw.write(`event: error\ndata: ${JSON.stringify({ message })}\n\n`)
+      const message = error instanceof Error ? error.message : 'Chat error'
+      app.log.error(error, 'chat tool loop error')
+      try {
+        reply.raw.write(`event: error\ndata: ${JSON.stringify({ message })}\n\n`)
+      } catch {
+        /* connection already closed */
+      }
       reply.raw.end()
     }
-
-    // Prevent Fastify from closing the response
-    reply.hijack()
   })
 }
 

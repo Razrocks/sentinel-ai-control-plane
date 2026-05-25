@@ -92,7 +92,8 @@ export async function actionsRoutes(app: FastifyInstance) {
     // If this is a replay, idempotency middleware already sent the cached response.
     if (request.idempotencyHit) return
     const { id } = request.params as { id: string }
-    const { decision, condition } = request.body as { decision: string; condition?: string }
+    const { decision, condition, expectedVersion: bodyExpectedVersion } =
+      request.body as { decision: string; condition?: string; expectedVersion?: number }
 
     // Validate decision
     const validDecisions = ['approved', 'denied', 'approved_with_condition']
@@ -110,11 +111,21 @@ export async function actionsRoutes(app: FastifyInstance) {
       throw new ValidationError('Condition text is required when approving with condition.')
     }
 
+    // B5: HTTP-layer optimistic concurrency. Prefer the standard `If-Match`
+    // header (RFC 7232). For convenience we also accept `expectedVersion` in
+    // the request body so existing JSON clients don't need a custom header
+    // helper. ETag may be wrapped in quotes (`"3"`) per the spec — strip
+    // them before parsing.
+    const ifMatchHeader = (request.headers['if-match'] as string | undefined)?.replace(/"/g, '').trim()
+    const headerExpectedVersion = ifMatchHeader && /^\d+$/.test(ifMatchHeader) ? Number(ifMatchHeader) : undefined
+    const expectedVersion = headerExpectedVersion ?? bodyExpectedVersion
+
     const result = await resolveCoApproval(
       id,
       request.user!.name,
       decision as 'approved' | 'denied' | 'approved_with_condition',
-      condition
+      condition,
+      expectedVersion,
     )
 
     // Reload full approval with relations for the response
@@ -122,6 +133,12 @@ export async function actionsRoutes(app: FastifyInstance) {
       where: { id },
       include: { coApprovals: true, decisionImpact: true },
     })
+
+    // Surface the new version as an ETag so the next caller can send it back
+    // in `If-Match`. Quoted per RFC 7232.
+    if (fullApproval) {
+      reply.header('ETag', `"${fullApproval.version}"`)
+    }
 
     return reply.send({
       approval: mapApproval(fullApproval),

@@ -111,7 +111,7 @@ export const roles: Record<Role, RoleConfig> = {
     id: 'admin',
     label: 'Admin',
     description: 'Guardrails, integrations, policy bundles, governance configuration',
-    nav: ['/', '/changes', '/incidents', '/access-requests', '/approvals', '/audit', '/policies', '/settings'],
+    nav: ['/', '/changes', '/incidents', '/access-requests', '/approvals', '/audit', '/policies', '/settings', '/admin'],
     actions: [
       'approve', 'deny', 'assess', 'triage', 'draft', 'escalate', 'simulate',
       'open_pr', 'block', 'request_review', 'route', 'trigger_fix', 'link_kb',

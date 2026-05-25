@@ -8,6 +8,7 @@ import {
   ScrollText,
   Shield,
   Settings,
+  Activity,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useRole } from '@/lib/roles';
@@ -25,6 +26,7 @@ const navItems = [
   { to: '/audit', label: 'Audit Trail', icon: ScrollText },
   { to: '/policies', label: 'Policies', icon: Shield },
   { to: '/settings', label: 'Settings', icon: Settings },
+  { to: '/admin', label: 'Admin Metrics', icon: Activity },
 ];
 
 export function Sidebar({ approvalCount }: SidebarProps) {

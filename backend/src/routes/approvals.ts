@@ -56,6 +56,9 @@ function mapApproval(approval: any) {
     createdAt: approval.createdAt.toISOString(),
     linkedObjectId: approval.linkedObjectId,
     whyYouAreRequired: approval.whyYouAreRequired ?? undefined,
+    // B5: surface the optimistic-lock version so clients can echo it back via
+    // `If-Match` or `expectedVersion` on the next decide call.
+    version: approval.version,
     coApprovals: approval.coApprovals?.map((ca: any) => ({
       role: ca.role,
       name: ca.name,

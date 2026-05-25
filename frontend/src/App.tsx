@@ -13,6 +13,7 @@ import Approvals from '@/pages/Approvals'
 import AuditTrail from '@/pages/AuditTrail'
 import Policies from '@/pages/Policies'
 import Settings from '@/pages/Settings'
+import AdminMetrics from '@/pages/AdminMetrics'
 import Login from '@/pages/Login'
 
 /** Authenticated app shell — reads auth user and passes role to RoleProvider */
@@ -46,6 +47,7 @@ function AuthenticatedRoutes() {
           <Route path="/audit" element={<AuditTrail />} />
           <Route path="/policies" element={<Policies />} />
           <Route path="/settings" element={<Settings />} />
+          <Route path="/admin" element={<AdminMetrics />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
       </Routes>

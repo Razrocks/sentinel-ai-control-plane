@@ -1,5 +1,5 @@
 import { prisma } from '../lib/prisma.js'
-import { NotFoundError, ValidationError } from '../lib/errors.js'
+import { NotFoundError, ValidationError, PreconditionFailedError } from '../lib/errors.js'
 import { logApprovalDecision, logAllApprovalsComplete } from './audit.js'
 import type { ApprovalStatus, CoApprovalStatus, AuditObjectType } from '@prisma/client'
 
@@ -43,7 +43,15 @@ export async function resolveCoApproval(
   approvalId: string,
   actorName: string,
   decision: 'approved' | 'denied' | 'approved_with_condition',
-  condition?: string
+  condition?: string,
+  /**
+   * B5: optional `If-Match` version supplied by the HTTP client. When set,
+   * the approval's current `version` column must match before we even read
+   * the rest of the row. Mismatch → 412 PreconditionFailed so the UI can
+   * show "someone else just acted on this — reload" instead of silently
+   * racing inside the DB layer.
+   */
+  expectedVersion?: number,
 ): Promise<CoApprovalResult> {
   // 1. Load approval with all co-approvals
   const approval = await prisma.approval.findUnique({
@@ -53,6 +61,14 @@ export async function resolveCoApproval(
 
   if (!approval) {
     throw new NotFoundError('Approval', approvalId)
+  }
+
+  // B5: HTTP-layer concurrency check. If the caller asserted a specific
+  // version, fail fast with 412 before we touch any co-approval rows. The
+  // internal optimistic lock below still runs as a backstop in case two
+  // callers raced past this check between read and write.
+  if (typeof expectedVersion === 'number' && approval.version !== expectedVersion) {
+    throw new PreconditionFailedError('Approval', approvalId, expectedVersion, approval.version)
   }
 
   if (approval.status !== 'pending') {
@@ -139,8 +155,13 @@ export async function resolveCoApproval(
     },
   })
   if (updateResult.count === 0) {
-    throw new Error(
-      `Approval ${approvalId} was modified concurrently (expected version ${currentVersion}). Reload and retry.`,
+    // Reload to get the actual current version for the error payload.
+    const fresh = await prisma.approval.findUnique({ where: { id: approvalId } })
+    throw new PreconditionFailedError(
+      'Approval',
+      approvalId,
+      currentVersion,
+      fresh?.version ?? currentVersion + 1,
     )
   }
   const updatedApproval = await prisma.approval.findUniqueOrThrow({ where: { id: approvalId } })

@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { api } from '@/lib/api'
+import { api, apiFetch } from '@/lib/api'
 
 // Shared stale time — data refreshes every 30s to prevent flicker
 const STALE_TIME = 30_000
@@ -106,5 +106,92 @@ export function useSettingsHealth() {
     queryKey: ['settingsHealth'],
     queryFn: () => api.getSettingsHealth(),
     staleTime: STALE_TIME,
+  })
+}
+
+// ─── Admin metrics (D MVP) ──────────────────────────────
+
+export interface AdminMetricsHealth {
+  timestamp: string
+  uptime: number
+  memoryMb: number
+  totals: Record<string, number>
+  last24h: Record<string, number>
+}
+
+export interface AdminMetricsSkill {
+  skill: string
+  totalCalls: number
+  successCount: number
+  validationFailedCount: number
+  errorCount: number
+  cacheHitRate: number
+  tokensIn: number
+  tokensOut: number
+  costUsd: number
+  latencyMsP50: number
+  latencyMsP95: number
+  avgConfidence: number | null
+}
+
+export interface AdminMetricsCost {
+  sinceDays: number
+  since: string
+  totalCalls: number
+  totalCostUsd: number
+  totalTokensIn: number
+  totalTokensOut: number
+  byActor: Array<{ actor: string; calls: number; costUsd: number; tokensIn: number; tokensOut: number }>
+  byModel: Array<{ model: string; calls: number; costUsd: number }>
+}
+
+export interface AdminMetricsAudit {
+  sinceDays: number
+  since: string
+  totalEvents: number
+  byResult: Record<string, number>
+  byObjectType: Record<string, number>
+  topActions: Array<{ action: string; success: number; blocked: number; denied: number; escalated: number; total: number }>
+}
+
+// 30s refresh — dashboard feels live without hammering backend
+const METRICS_REFRESH_MS = 30_000
+
+export function useAdminMetricsHealth() {
+  return useQuery<AdminMetricsHealth>({
+    queryKey: ['adminMetricsHealth'],
+    queryFn: () => apiFetch<AdminMetricsHealth>('/admin/metrics/health'),
+    staleTime: METRICS_REFRESH_MS,
+    refetchInterval: METRICS_REFRESH_MS,
+  })
+}
+
+export function useAdminMetricsSkills(days: number = 7) {
+  return useQuery<{ sinceDays: number; since: string; skills: AdminMetricsSkill[] }>({
+    queryKey: ['adminMetricsSkills', days],
+    queryFn: () =>
+      apiFetch<{ sinceDays: number; since: string; skills: AdminMetricsSkill[] }>(
+        `/admin/metrics/skills?days=${days}`,
+      ),
+    staleTime: METRICS_REFRESH_MS,
+    refetchInterval: METRICS_REFRESH_MS,
+  })
+}
+
+export function useAdminMetricsCost(days: number = 7) {
+  return useQuery<AdminMetricsCost>({
+    queryKey: ['adminMetricsCost', days],
+    queryFn: () => apiFetch<AdminMetricsCost>(`/admin/metrics/cost?days=${days}`),
+    staleTime: METRICS_REFRESH_MS,
+    refetchInterval: METRICS_REFRESH_MS,
+  })
+}
+
+export function useAdminMetricsAudit(days: number = 7) {
+  return useQuery<AdminMetricsAudit>({
+    queryKey: ['adminMetricsAudit', days],
+    queryFn: () => apiFetch<AdminMetricsAudit>(`/admin/metrics/audit?days=${days}`),
+    staleTime: METRICS_REFRESH_MS,
+    refetchInterval: METRICS_REFRESH_MS,
   })
 }

@@ -1,5 +1,5 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { apiFetch } from '@/lib/api'
+import { apiFetch, ApiError } from '@/lib/api'
 import type { Approval, Change, AccessRequest, Incident } from '@/types'
 
 // ─── Types ──────────────────────────────────────────────
@@ -8,6 +8,31 @@ interface ApprovalDecideInput {
   id: string
   decision: 'approved' | 'denied' | 'approved_with_condition'
   condition?: string
+  /**
+   * B5 — optimistic-lock version read from the Approval. The backend rejects
+   * the mutation with 412 if this no longer matches, preventing two
+   * approvers from racing past each other. Callers MUST pass this; we
+   * default to `undefined` only so existing tests keep typechecking.
+   */
+  expectedVersion?: number
+}
+
+/**
+ * Thrown when the backend rejects a decide call with 412 Precondition
+ * Failed. Carries the current version the server has so the UI can show
+ * "someone else acted on this — reload to see the latest" and refetch.
+ */
+export class ApprovalConflictError extends Error {
+  constructor(
+    public approvalId: string,
+    public expectedVersion: number,
+    public currentVersion: number,
+  ) {
+    super(
+      `Approval ${approvalId} changed since you loaded it (your version ${expectedVersion}, current ${currentVersion}). Reload and review the latest state before deciding again.`,
+    )
+    this.name = 'ApprovalConflictError'
+  }
 }
 
 interface ApprovalDecideResult {
@@ -50,11 +75,33 @@ export function useApprovalDecision() {
   const queryClient = useQueryClient()
 
   return useMutation<ApprovalDecideResult, Error, ApprovalDecideInput>({
-    mutationFn: async ({ id, decision, condition }) => {
-      return apiFetch<ApprovalDecideResult>(`/approvals/${id}/decide`, {
-        method: 'POST',
-        body: JSON.stringify({ decision, condition }),
-      })
+    mutationFn: async ({ id, decision, condition, expectedVersion }) => {
+      try {
+        return await apiFetch<ApprovalDecideResult>(`/approvals/${id}/decide`, {
+          method: 'POST',
+          // B5: send the version both as an If-Match header (HTTP-standard)
+          // and as expectedVersion in the body (so clients without easy
+          // header access still get protection). Backend prefers the header.
+          headers:
+            typeof expectedVersion === 'number'
+              ? { 'If-Match': `"${expectedVersion}"` }
+              : undefined,
+          body: JSON.stringify({ decision, condition, expectedVersion }),
+        })
+      } catch (err) {
+        // Translate 412 into a domain-specific error so the UI can render
+        // a "stale approval" message and trigger a fresh fetch instead of
+        // showing a generic "Bad Request" toast.
+        if (err instanceof ApiError && err.status === 412) {
+          const body = err.body as { expectedVersion?: number; currentVersion?: number } | undefined
+          throw new ApprovalConflictError(
+            id,
+            body?.expectedVersion ?? expectedVersion ?? -1,
+            body?.currentVersion ?? -1,
+          )
+        }
+        throw err
+      }
     },
     onSuccess: () => {
       // Invalidate all related caches
@@ -62,6 +109,13 @@ export function useApprovalDecision() {
       queryClient.invalidateQueries({ queryKey: ['changes'] })
       queryClient.invalidateQueries({ queryKey: ['accessRequests'] })
       queryClient.invalidateQueries({ queryKey: ['auditEvents'] })
+    },
+    onError: (err) => {
+      // On a stale-version conflict, refetch approvals immediately so the
+      // user sees the new state as soon as they dismiss the error.
+      if (err instanceof ApprovalConflictError) {
+        queryClient.invalidateQueries({ queryKey: ['approvals'] })
+      }
     },
   })
 }

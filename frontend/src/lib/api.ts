@@ -1,9 +1,16 @@
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001/api'
 
-class ApiError extends Error {
+/**
+ * Typed API error. Carries the HTTP status, the parsed body (if JSON), and
+ * any pertinent response headers (e.g. ETag) so callers can react to
+ * structured failures like 412 Precondition Failed without re-parsing.
+ */
+export class ApiError extends Error {
   constructor(
     public status: number,
-    message: string
+    message: string,
+    public body?: unknown,
+    public etag?: string,
   ) {
     super(message)
     this.name = 'ApiError'
@@ -28,8 +35,22 @@ export async function apiFetch<T>(path: string, options?: RequestInit): Promise<
   })
 
   if (!res.ok) {
-    const text = await res.text().catch(() => res.statusText)
-    throw new ApiError(res.status, text)
+    // Try to parse the body as JSON so callers can read structured fields
+    // (PreconditionFailedError carries `expectedVersion` and `currentVersion`,
+    // for example). Fall back to raw text if it's not JSON.
+    const raw = await res.text().catch(() => res.statusText)
+    let body: unknown = raw
+    let message = raw
+    try {
+      const parsed = JSON.parse(raw)
+      body = parsed
+      if (parsed && typeof parsed === 'object' && 'message' in parsed) {
+        message = String((parsed as { message: unknown }).message)
+      }
+    } catch {
+      // raw text is fine
+    }
+    throw new ApiError(res.status, message, body, res.headers.get('etag') ?? undefined)
   }
 
   return res.json()

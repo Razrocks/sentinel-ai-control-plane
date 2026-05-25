@@ -57,6 +57,19 @@ const assess_change: SkillSpec<S.AssessChangeInput, S.AssessChangeOutput> = {
   purpose:
     'Classify the risk of a change (critical/high/medium/low) with a 1-2 sentence summary, ' +
     '2-4 sentence rationale, confidence, and contributing signals. Advisory only.',
+  // A9: high-stakes — a wrong risk level routes the change to the wrong
+  // approver chain. Critic catches "low risk" + "production data loss"
+  // contradictions and hallucinated service names that slipped past the
+  // reference validator because they happened to appear in the input text.
+  critique: {
+    enabled: true,
+    blockSeverity: 'major',
+    extraGuidance: [
+      '- riskLevel must match the contributing signals (don\'t mark "low" when signals include "negative" + "data" or "reversibility").',
+      '- signals[].kind values must be valid enums.',
+      '- summary and riskRationale must not contradict each other.',
+    ].join('\n'),
+  },
   buildPrompt: makeBuildPrompt<S.AssessChangeInput>(
     [
       'Classify the risk of this change. Read input.change and produce a NEW JSON object with these EXACT fields:',
@@ -190,6 +203,19 @@ const evaluate_access_request: SkillSpec<
   purpose:
     'Evaluate an access request: produce a risk classification, justification quality, narrative, ' +
     'flags, and recommended time-bound. Does not decide entitlement.',
+  // A9: high-stakes — feeds the access approver chain. Critic catches
+  // "low risk" verdicts on critical systems and flags justification-quality
+  // mismatches.
+  critique: {
+    enabled: true,
+    blockSeverity: 'major',
+    extraGuidance: [
+      '- riskLevel must reflect system tier × role privilege; not just the requester\'s tone.',
+      '- justificationQuality must match the actual quality of input.request.justification.',
+      '- flags[].kind values must be valid enums; do not invent new kinds.',
+      '- If freeze_active is in flags, narrative must mention the freeze.',
+    ].join('\n'),
+  },
   buildPrompt: makeBuildPrompt<S.EvaluateAccessRequestInput>(
     [
       'Evaluate this access request. Produce a NEW JSON object with these EXACT fields:',
@@ -230,6 +256,19 @@ const support_approval_decision: SkillSpec<
   purpose:
     'Produce three short impact statements (approve / deny / escalate) plus a per-co-approver ' +
     '"why required" reason. Used to populate Approval.decisionImpact at chain construction.',
+  // A9: high-stakes — these strings appear verbatim in the approval UI
+  // that the approver reads before deciding. Critic catches role/name
+  // pairs that don't match input.approval.coApprovals and impact text
+  // that contradicts the actual approval chain shape.
+  critique: {
+    enabled: true,
+    blockSeverity: 'major',
+    extraGuidance: [
+      '- whyEachApproverIsRequired[].role and .name MUST come verbatim from input.approval.coApprovals; flag any hallucinated names.',
+      '- whyEachApproverIsRequired.length MUST equal input.approval.coApprovals.length exactly.',
+      '- approve/deny/escalate strings must not contradict the input (e.g. don\'t say "merges to main" if input has no PR).',
+    ].join('\n'),
+  },
   buildPrompt: makeBuildPrompt<S.SupportApprovalDecisionInput>(
     [
       'Produce a NEW JSON object with these EXACT fields:',
@@ -320,34 +359,63 @@ const propose_bounded_remediation: SkillSpec<
   purpose:
     'Draft a single-service, single-environment, single-changeType remediation proposal with ' +
     'estimated blast radius, rollback plan, and suggested maintenance window. Output is a draft.',
+  // A9: critique catches options that contradict their own riskDelta label
+  // (an "lower-risk-slower" option estimated as "critical") and recommended
+  // ids that don't match any options[].id.
+  critique: {
+    enabled: true,
+    blockSeverity: 'major',
+    extraGuidance: [
+      '- recommendedOptionId MUST be one of options[].id exactly.',
+      '- Exactly one option must have riskDelta="baseline-recommended" — the same one that recommendedOptionId points to.',
+      '- Every other option must have a comparison riskDelta (lower-risk-slower / higher-risk-faster / equivalent-different-tradeoff).',
+      '- An option labelled "lower-risk-slower" must have a lower or equal estimatedRiskLevel than the baseline.',
+      '- All options must respect single-service / single-environment / single-changeType bounds.',
+    ].join('\n'),
+  },
   buildPrompt: makeBuildPrompt<S.ProposeBoundedRemediationInput>(
     [
-      'Propose ONE bounded remediation. Produce a NEW JSON object with these EXACT fields:',
+      'Propose 2-3 bounded remediation OPTIONS the approver can choose between. Produce a NEW JSON object with these EXACT fields:',
       '',
       '{',
-      '  "proposed": {',
-      '    "title": "<suitable as a Change title>",',
-      '    "description": "<4-8 sentences>",',
-      '    "targetService": "<exactly one service from input.authorContext.systemsOwned or input.incident.affectedService>",',
-      '    "environment": "<exactly one — usually production unless incident is staging>",',
-      '    "changeType": "rollback"|"config_change"|"restart"|"failover",',
-      '    "estimatedRiskLevel": "critical"|"high"|"medium"|"low",',
-      '    "estimatedBlastRadius": [ { "name": "<entity>", "type": "<service|api|db|job>", "reason": "<short>" } ],',
-      '    "rollbackPlan": "<2-4 sentences>",',
-      '    "rollbackTested": <boolean>,',
-      '    "suggestedMaintenanceWindow": "<ISO range>" | null',
-      '  },',
-      '  "rationale": "<why this remediation; why not others>",',
+      '  "options": [',
+      '    {',
+      '      "id": "<short stable id, e.g. \\"opt-a\\">",',
+      '      "label": "<short human name, e.g. \\"Roll back to v2.4\\">",',
+      '      "optionRationale": "<1-2 sentences: why this is on the menu>",',
+      '      "riskDelta": "baseline-recommended" | "lower-risk-slower" | "higher-risk-faster" | "equivalent-different-tradeoff",',
+      '      "title": "<suitable as a Change title>",',
+      '      "description": "<4-8 sentences>",',
+      '      "targetService": "<exactly one service from input.authorContext.systemsOwned or input.incident.affectedService>",',
+      '      "environment": "<exactly one — usually production unless incident is staging>",',
+      '      "changeType": "rollback"|"config_change"|"restart"|"failover",',
+      '      "estimatedRiskLevel": "critical"|"high"|"medium"|"low",',
+      '      "estimatedBlastRadius": [ { "name": "<entity>", "type": "<service|api|db|job>", "reason": "<short>" } ],',
+      '      "rollbackPlan": "<2-4 sentences>",',
+      '      "rollbackTested": <boolean>,',
+      '      "suggestedMaintenanceWindow": "<ISO range>" | null',
+      '    }',
+      '  ],',
+      '  "recommendedOptionId": "<id of the option you recommend; MUST appear in options[]>",',
+      '  "rationale": "<2-4 sentences: why this option set, why your recommendation>",',
       '  "dependencies": [ "<human-readable prerequisite>" ],',
       '  "warnings": [ { "severity": "info"|"warn"|"block", "note": "<short>" } ],',
       '  "confidence": <number 0.0 to 1.0>',
       '}',
       '',
+      'How to pick the option set:',
+      '- Aim for 2-3 options that represent meaningfully different trade-offs.',
+      '- Typical pattern: one fast-rollback baseline + one safer-but-slower alternative + one targeted alternative (e.g. failover instead of rollback).',
+      '- Do NOT include filler options that are minor variants of each other.',
+      '- If only one credible option exists (e.g. a clear rollback is the only safe move), return ONE option and explain in rationale.',
+      '',
       'Hard rules (violating these is invalid output):',
-      '- targetService is EXACTLY ONE service name (no commas, no "and").',
-      '- changeType is EXACTLY ONE enum value.',
-      '- rollbackPlan is REQUIRED.',
-      '- If remediation cannot fit single-service bounds, do NOT relax — add warnings explaining the multi-service issue and propose only the first-step single-service change.',
+      '- options.length is 1, 2, or 3.',
+      '- recommendedOptionId MUST equal an options[].id.',
+      '- Exactly one option has riskDelta="baseline-recommended" — the one recommendedOptionId points to.',
+      '- All other options have a comparison riskDelta.',
+      '- Per option: targetService is EXACTLY ONE service, changeType is EXACTLY ONE enum, rollbackPlan is REQUIRED.',
+      '- If remediation cannot fit single-service bounds for an option, do NOT relax — add warnings and only propose the first-step single-service change for that option.',
     ].join('\n'),
     {
       servicesFilter: (input) => [input.incident.affectedService],

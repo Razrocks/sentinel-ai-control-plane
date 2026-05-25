@@ -26,7 +26,7 @@ import type {
   AnalyzeBlastRadiusOutput,
 } from '../skills/index.js'
 import { createAuditEvent } from '../audit.js'
-import { buildBaseContext, loadChangeT2Extras } from './context.js'
+import { buildBaseContext, loadChangeT2Extras, loadAuditSlice } from './context.js'
 import { gateConfidence } from './confidence.js'
 import type { RiskLevel as PrismaRiskLevel } from '@prisma/client'
 
@@ -57,7 +57,13 @@ export async function triageChange(opts: {
 
   const actor = opts.actor ?? 'system'
   const ctx = await buildBaseContext({ actor, role: 'operator' })
-  ctx.t2 = await loadChangeT2Extras(change.service)
+  // Load T2 entity extras (recent deploys on this service) and T4 entity
+  // audit slice (prior actions on this specific change — escalations,
+  // approval starts, rolled-back deploys) in parallel.
+  ;[ctx.t2, ctx.t4] = await Promise.all([
+    loadChangeT2Extras(change.service),
+    loadAuditSlice({ objectType: 'change', objectId: change.ticketId, limit: 15 }),
+  ])
 
   // ── 1. assess_change ──────────────────────────────────
   const assessInput: AssessChangeInput = {

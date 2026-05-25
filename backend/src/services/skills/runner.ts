@@ -23,6 +23,7 @@ import { prisma } from '../../lib/prisma.js'
 import { getSkill, hasSkill } from './registry.js'
 import { splitOnCacheBreak } from './prompt.js'
 import { validateReferences, violationsAreBlocking } from './validate-references.js'
+import { runCritique, critiqueBlocks } from './critique.js'
 import {
   withRetry,
   withTimeout,
@@ -440,9 +441,56 @@ export async function runSkill<TInput = unknown, TOutput = unknown>(
     }
   }
 
-  // 7. Success
+  // 7. A9 self-critique (opt-in per skill).
+  // Runs a cheap critic model to look for problems the schema and reference
+  // validator can't catch — factual contradictions, missed constraints,
+  // schema-valid-but-semantically-wrong outputs. Blocks the call on a
+  // `major` severity verdict; lesser severities pass through with the
+  // critique attached for observability.
   const validated = outputCheck.data as TOutput & { confidence?: number }
   const confidence = typeof validated.confidence === 'number' ? validated.confidence : null
+
+  let critique: import('./types.js').CritiqueResult | undefined
+  if (spec.critique?.enabled) {
+    critique = await runCritique(client, name, inputCheck.data, validated, spec.critique)
+    // Fold critique tokens into the totals so cost dashboards stay accurate.
+    tokensIn += critique.tokensIn
+    tokensOut += critique.tokensOut
+
+    if (critiqueBlocks(critique, spec.critique)) {
+      const errMsg = `[critique-blocked] ${critique.issues.join('; ')}${
+        critique.suggestion ? ` | suggestion: ${critique.suggestion}` : ''
+      }`
+      let invocationId: string | undefined
+      if (!options.skipProvenance) {
+        invocationId = await writeProvenance({
+          skill: name,
+          kind: spec.kind,
+          model: usedModel,
+          promptHash,
+          tokensIn,
+          tokensOut,
+          cached,
+          latencyMs: Date.now() - startedAt,
+          confidence,
+          status: 'validation_failed',
+          errorMessage: errMsg,
+          actor,
+        })
+      }
+      return {
+        status: 'validation_failed',
+        rawOutput: rawText,
+        errorMessage: errMsg,
+        invocationId,
+        metrics: { tokensIn, tokensOut, latencyMs: Date.now() - startedAt, cached },
+        critique,
+      }
+    }
+  }
+
+  // 8. Success
+  const finalLatency = Date.now() - startedAt
 
   let invocationId: string | undefined
   if (!options.skipProvenance) {
@@ -454,7 +502,7 @@ export async function runSkill<TInput = unknown, TOutput = unknown>(
       tokensIn,
       tokensOut,
       cached,
-      latencyMs,
+      latencyMs: finalLatency,
       confidence,
       status: 'success',
       errorMessage: null,
@@ -466,8 +514,9 @@ export async function runSkill<TInput = unknown, TOutput = unknown>(
     status: 'success',
     output: validated,
     invocationId,
-    metrics: { tokensIn, tokensOut, latencyMs, cached },
+    metrics: { tokensIn, tokensOut, latencyMs: finalLatency, cached },
     confidence: confidence ?? undefined,
+    critique,
   }
 }
 

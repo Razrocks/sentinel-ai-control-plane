@@ -17,7 +17,7 @@ import {
   ChevronUp,
 } from 'lucide-react'
 import { useApprovals } from '@/hooks/useData'
-import { useApprovalDecision } from '@/hooks/useMutations'
+import { useApprovalDecision, ApprovalConflictError } from '@/hooks/useMutations'
 import { RiskBadge, PolicyBadge, ActionGuardModal } from '@/components/shared'
 import { timeAgo } from '@/lib/utils'
 import { useRole } from '@/lib/roles'
@@ -52,7 +52,10 @@ export default function Approvals() {
   const approvalDecision = useApprovalDecision()
 
   const [guardModal, setGuardModal] = useState<{ action: string; label: string; reason: string } | null>(null)
-  const [conditionModal, setConditionModal] = useState<string | null>(null)
+  // B5: store the full approval (not just its id) so the modal carries the
+  // version we read when the user clicked, not whatever the cache holds when
+  // they finally confirm.
+  const [conditionModal, setConditionModal] = useState<Approval | null>(null)
   const [conditionText, setConditionText] = useState('')
   const [expandedImpact, setExpandedImpact] = useState<string | null>(null)
   const { role, canAction, getActionPermission } = useRole()
@@ -64,43 +67,46 @@ export default function Approvals() {
   const resolved = filtered.filter(a => a.status !== 'pending')
   const pendingCount = approvals.filter(a => a.status === 'pending').length
 
-  const handleApprove = (id: string) => {
+  const handleApprove = (approval: Approval) => {
     const perm = getActionPermission('approve', 'Approve')
     if (!perm.allowed) {
       setGuardModal({ action: 'approve', label: 'Approve', reason: perm.reason || 'Not permitted' })
       return
     }
-    approvalDecision.mutate({ id, decision: 'approved' })
+    // B5: pass the version we rendered with — backend rejects with 412 if
+    // someone else has decided in the meantime.
+    approvalDecision.mutate({ id: approval.id, decision: 'approved', expectedVersion: approval.version })
   }
 
-  const handleApproveWithCondition = (id: string) => {
+  const handleApproveWithCondition = (approval: Approval) => {
     const perm = getActionPermission('approve', 'Approve with Condition')
     if (!perm.allowed) {
       setGuardModal({ action: 'approve', label: 'Approve with Condition', reason: perm.reason || 'Not permitted' })
       return
     }
-    setConditionModal(id)
+    setConditionModal(approval)
     setConditionText('')
   }
 
   const confirmCondition = () => {
     if (!conditionModal || !conditionText.trim()) return
     approvalDecision.mutate({
-      id: conditionModal,
+      id: conditionModal.id,
       decision: 'approved_with_condition',
       condition: conditionText.trim(),
+      expectedVersion: conditionModal.version,
     })
     setConditionModal(null)
     setConditionText('')
   }
 
-  const handleDeny = (id: string) => {
+  const handleDeny = (approval: Approval) => {
     const perm = getActionPermission('deny', 'Deny')
     if (!perm.allowed) {
       setGuardModal({ action: 'deny', label: 'Deny', reason: perm.reason || 'Not permitted' })
       return
     }
-    approvalDecision.mutate({ id, decision: 'denied' })
+    approvalDecision.mutate({ id: approval.id, decision: 'denied', expectedVersion: approval.version })
   }
 
   const filters: { id: FilterType; label: string; count: number }[] = [
@@ -125,6 +131,48 @@ export default function Approvals() {
         <h1 className="text-2xl font-semibold text-text-primary">Approvals</h1>
         <p className="text-text-secondary mt-1">{pendingCount} pending approval{pendingCount !== 1 ? 's' : ''} requiring action</p>
       </div>
+
+      {/* B5: stale-version conflict banner. Fires when two approvers raced
+          and the backend rejected our decision with 412. The list has
+          already been invalidated by the mutation's onError, so the user
+          just needs to acknowledge before deciding again. */}
+      {approvalDecision.error instanceof ApprovalConflictError && (
+        <div className="flex items-start gap-3 rounded-lg border border-status-pending/40 bg-status-pending/10 p-3">
+          <AlertTriangle className="h-4 w-4 text-status-pending flex-shrink-0 mt-0.5" />
+          <div className="flex-1 text-sm">
+            <div className="font-medium text-status-pending">
+              Approval changed while you were deciding
+            </div>
+            <p className="mt-0.5 text-text-secondary">
+              Another approver acted on this request first. The latest state has been reloaded —
+              review it before deciding again.
+            </p>
+          </div>
+          <button
+            onClick={() => approvalDecision.reset()}
+            className="text-xs text-text-secondary hover:text-text-primary px-2 py-1 rounded hover:bg-surface-raised"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
+      {/* Generic mutation error fallback for non-conflict failures. */}
+      {approvalDecision.error && !(approvalDecision.error instanceof ApprovalConflictError) && (
+        <div className="flex items-start gap-3 rounded-lg border border-status-denied/40 bg-status-denied/10 p-3">
+          <XCircle className="h-4 w-4 text-status-denied flex-shrink-0 mt-0.5" />
+          <div className="flex-1 text-sm">
+            <div className="font-medium text-status-denied">Decision failed</div>
+            <p className="mt-0.5 text-text-secondary">{approvalDecision.error.message}</p>
+          </div>
+          <button
+            onClick={() => approvalDecision.reset()}
+            className="text-xs text-text-secondary hover:text-text-primary px-2 py-1 rounded hover:bg-surface-raised"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
 
       {/* Filters with counts */}
       <div className="flex gap-2">
@@ -322,14 +370,14 @@ export default function Approvals() {
                         <>
                           <div className="flex gap-1.5">
                             <button
-                              onClick={() => handleApprove(approval.id)}
+                              onClick={() => handleApprove(approval)}
                               className="flex-1 flex items-center justify-center gap-1 rounded px-2 py-1.5 text-xs font-medium bg-status-approved/20 text-status-approved hover:bg-status-approved/30 transition-colors"
                             >
                               <CheckCircle className="h-3.5 w-3.5" />
                               Approve
                             </button>
                             <button
-                              onClick={() => handleDeny(approval.id)}
+                              onClick={() => handleDeny(approval)}
                               className="flex-1 flex items-center justify-center gap-1 rounded px-2 py-1.5 text-xs font-medium bg-status-denied/20 text-status-denied hover:bg-status-denied/30 transition-colors"
                             >
                               <XCircle className="h-3.5 w-3.5" />
@@ -338,7 +386,7 @@ export default function Approvals() {
                           </div>
                           {/* Approve with Condition — first-class action for approvers */}
                           <button
-                            onClick={() => handleApproveWithCondition(approval.id)}
+                            onClick={() => handleApproveWithCondition(approval)}
                             className="w-full flex items-center justify-center gap-1 rounded px-2 py-1.5 text-xs font-medium bg-status-pending/20 text-status-pending hover:bg-status-pending/30 transition-colors"
                           >
                             <FileCheck className="h-3.5 w-3.5" />
@@ -350,14 +398,14 @@ export default function Approvals() {
                           {/* Blocked approve/deny for operators */}
                           <div className="flex gap-1.5">
                             <button
-                              onClick={() => handleApprove(approval.id)}
+                              onClick={() => handleApprove(approval)}
                               className="flex-1 flex items-center justify-center gap-1 rounded px-2 py-1.5 text-xs font-medium bg-surface-raised text-text-muted cursor-not-allowed opacity-60"
                             >
                               <Lock className="h-3 w-3" />
                               Approve
                             </button>
                             <button
-                              onClick={() => handleDeny(approval.id)}
+                              onClick={() => handleDeny(approval)}
                               className="flex-1 flex items-center justify-center gap-1 rounded px-2 py-1.5 text-xs font-medium bg-surface-raised text-text-muted cursor-not-allowed opacity-60"
                             >
                               <Lock className="h-3 w-3" />

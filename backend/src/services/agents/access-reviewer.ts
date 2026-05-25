@@ -21,7 +21,7 @@ import type {
   EvaluateAccessRequestOutput,
 } from '../skills/index.js'
 import { createAuditEvent } from '../audit.js'
-import { buildBaseContext } from './context.js'
+import { buildBaseContext, loadAuditSlice } from './context.js'
 import { gateConfidence } from './confidence.js'
 import type { RiskLevel as PrismaRiskLevel, UserRole } from '@prisma/client'
 
@@ -65,6 +65,14 @@ export async function reviewAccessRequest(opts: {
 
   const actor = opts.actor ?? 'system'
   const ctx = await buildBaseContext({ actor, role: 'access_approver' })
+  // T4 entity slice — prior decisions / re-evaluations on this same access
+  // request. Helps the model spot re-submissions and ping-pong with the
+  // approver instead of treating each call as a fresh request.
+  ctx.t4 = await loadAuditSlice({
+    objectType: 'access',
+    objectId: req.requestId,
+    limit: 15,
+  })
 
   // Try to find the requester user by email or name
   const requesterUser = await prisma.user.findFirst({

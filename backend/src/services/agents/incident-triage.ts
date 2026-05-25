@@ -18,7 +18,7 @@ import { prisma } from '../../lib/prisma.js'
 import { runSkill } from '../skills/index.js'
 import type { TriageIncidentInput, TriageIncidentOutput } from '../skills/index.js'
 import { createAuditEvent } from '../audit.js'
-import { buildBaseContext, loadIncidentT2Extras } from './context.js'
+import { buildBaseContext, loadIncidentT2Extras, loadAuditSlice } from './context.js'
 import { gateConfidence } from './confidence.js'
 import type { IncidentSeverity } from '@prisma/client'
 
@@ -43,7 +43,13 @@ export async function triageIncident(opts: {
 
   const actor = opts.actor ?? 'system'
   const ctx = await buildBaseContext({ actor, role: 'it_support', includeRole: false })
-  ctx.t2 = await loadIncidentT2Extras(incident.affectedService)
+  // T2 + T4 in parallel — T4 surfaces prior work-notes, severity changes,
+  // and triage actions on this same incident so the model doesn't suggest
+  // a fix that was already tried.
+  ;[ctx.t2, ctx.t4] = await Promise.all([
+    loadIncidentT2Extras(incident.affectedService),
+    loadAuditSlice({ objectType: 'incident', objectId: incident.incidentId, limit: 15 }),
+  ])
 
   const input: TriageIncidentInput = {
     incident: {

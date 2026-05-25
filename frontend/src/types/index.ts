@@ -126,6 +126,8 @@ export interface Approval {
   coApprovals?: CoApproval[]
   decisionImpact?: DecisionImpact
   whyYouAreRequired?: string
+  /** B5 — optimistic-lock version. Echo back via `If-Match` on the next mutation. */
+  version: number
 }
 
 export interface AuditEvent {

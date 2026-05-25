@@ -265,6 +265,66 @@ export interface SkillSpec<TInput = unknown, TOutput = unknown> {
     system: string
     user: string
   }
+  /**
+   * A9 — optional second-pass self-critique. When set, after the primary
+   * output has passed schema + reference validation the runner asks a
+   * cheaper critic model to look for problems. Severity ≥ blockSeverity
+   * fails the call as `validation_failed` so the caller treats it as bad
+   * output instead of silently persisting questionable analysis.
+   *
+   * Apply selectively — every critiqued call roughly doubles the model
+   * cost. Reserve for high-stakes skills: risk classification, access
+   * evaluation, approval-decision support, anything that influences a
+   * production-affecting human decision.
+   */
+  critique?: CritiqueConfig
+}
+
+// ─── A9 self-critique ───────────────────────────────────
+
+/**
+ * Per-skill self-critique configuration. The critic runs after the primary
+ * output passes its schema + reference validators; on a "block"-severity
+ * issue it fails the call so callers can re-route or fall back.
+ */
+export interface CritiqueConfig {
+  enabled: true
+  /**
+   * Model to use for the critic. Defaults to a cheap haiku — the critic
+   * should be cheaper than the primary so we don't double our spend.
+   */
+  model?: string
+  /**
+   * Minimum severity that fails the call. Lower severities are kept on the
+   * result for observability but don't block. Defaults to `'major'`.
+   */
+  blockSeverity?: CritiqueSeverity
+  /**
+   * Free-form extra guidance appended to the critic system prompt. Use this
+   * to call out skill-specific failure modes ("watch for hallucinated
+   * service names", "verify role/user pairings exist in input.orgCatalog").
+   */
+  extraGuidance?: string
+}
+
+export type CritiqueSeverity = 'none' | 'minor' | 'major'
+
+/**
+ * Critic output, returned alongside RunnerResult so callers can surface it
+ * to the user / dashboard. `ok=true` means the critic found no blocking
+ * issues; `severity='major'` plus `ok=false` is the fail path.
+ */
+export interface CritiqueResult {
+  ok: boolean
+  severity: CritiqueSeverity
+  issues: string[]
+  /** Optional natural-language suggestion for how to fix the output. */
+  suggestion?: string
+  /** Model used for the critic call (for cost attribution). */
+  model: string
+  /** Critic-call tokens, additive on top of the primary call. */
+  tokensIn: number
+  tokensOut: number
 }
 
 // ─── Runner result ──────────────────────────────────────
@@ -290,6 +350,12 @@ export interface RunnerResult<TOutput = unknown> {
   }
   /** Confidence the skill self-reported, if any. */
   confidence?: number
+  /**
+   * A9 — critic result when the skill opted into self-critique. Present on
+   * both `success` (critic passed) and `validation_failed` (critic blocked)
+   * paths so the dashboard can show the critique pass-rate.
+   */
+  critique?: CritiqueResult
 }
 
 // ─── Runner options ─────────────────────────────────────

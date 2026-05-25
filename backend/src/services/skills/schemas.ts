@@ -383,21 +383,51 @@ export const ProposeBoundedRemediationInput = z.object({
 })
 export type ProposeBoundedRemediationInput = z.infer<typeof ProposeBoundedRemediationInput>
 
+// A6 — multi-option proposals. The skill now returns 2-3 ranked options so
+// the approver can choose between alternatives instead of accepting or
+// rejecting a single take-it-or-leave-it proposal. The model picks one as
+// `recommended`, but the caller (and ultimately the approver) may approve
+// any of them. Persistence: every option is stored; the approver's chosen
+// option id is recorded on the resulting Change/Approval.
+const RemediationOption = z.object({
+  /** Short stable id used by the approver UI when selecting. e.g. "opt-a". */
+  id: z.string(),
+  /** Human-readable name for the option, distinct from title. e.g. "Roll back to v2.4". */
+  label: z.string(),
+  /** Why this option is in the list (1-2 sentences). Distinct from rollbackPlan. */
+  optionRationale: z.string(),
+  /**
+   * Trade-off relative to the recommended option, from the approver's POV.
+   * "baseline-recommended" is reserved for the option matching
+   * recommendedOptionId; all others must use one of the comparison values.
+   */
+  riskDelta: z.enum([
+    'lower-risk-slower',
+    'higher-risk-faster',
+    'equivalent-different-tradeoff',
+    'baseline-recommended',
+  ]),
+  title: z.string(),
+  description: z.string(),
+  targetService: z.string(),
+  environment: z.string(),
+  changeType: z.enum(['rollback', 'config_change', 'restart', 'failover']),
+  estimatedRiskLevel: RiskLevel,
+  estimatedBlastRadius: z.array(
+    z.object({ name: z.string(), type: z.string(), reason: z.string() }),
+  ),
+  rollbackPlan: z.string(),
+  rollbackTested: z.boolean(),
+  suggestedMaintenanceWindow: z.string().nullable(),
+})
+export type RemediationOption = z.infer<typeof RemediationOption>
+
 export const ProposeBoundedRemediationOutput = z.object({
-  proposed: z.object({
-    title: z.string(),
-    description: z.string(),
-    targetService: z.string(),
-    environment: z.string(),
-    changeType: z.enum(['rollback', 'config_change', 'restart', 'failover']),
-    estimatedRiskLevel: RiskLevel,
-    estimatedBlastRadius: z.array(
-      z.object({ name: z.string(), type: z.string(), reason: z.string() }),
-    ),
-    rollbackPlan: z.string(),
-    rollbackTested: z.boolean(),
-    suggestedMaintenanceWindow: z.string().nullable(),
-  }),
+  /** 2-3 options ranked by the model. min(1) for degraded scenarios. */
+  options: z.array(RemediationOption).min(1).max(3),
+  /** Must match exactly one options[].id — the model's pick. */
+  recommendedOptionId: z.string(),
+  /** Why this option set + why the recommendation. 2-4 sentences. */
   rationale: z.string(),
   dependencies: z.array(z.string()),
   warnings: z.array(

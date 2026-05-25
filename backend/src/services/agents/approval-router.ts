@@ -187,10 +187,13 @@ export async function routeApproval(opts: {
     const accepted = route.output.participants.filter((p) => !p.isFiler)
     filerOmitted = route.output.participants.length - accepted.length
 
-    // Replace existing coApprovals
-    await prisma.coApproval.deleteMany({ where: { approvalId: approval.id } })
-    if (accepted.length > 0) {
-      await prisma.coApproval.createMany({
+    // B3: replace existing coApprovals atomically. delete + createMany must
+    // either both succeed or both roll back — orphan state (no rows after
+    // delete, before createMany crashes) breaks the approval chain.
+    coApprovalsWritten = await prisma.$transaction(async (tx) => {
+      await tx.coApproval.deleteMany({ where: { approvalId: approval.id } })
+      if (accepted.length === 0) return 0
+      await tx.coApproval.createMany({
         data: accepted.map((p) => ({
           approvalId: approval.id,
           role: p.role,
@@ -198,8 +201,8 @@ export async function routeApproval(opts: {
           status: 'pending' as const,
         })),
       })
-      coApprovalsWritten = accepted.length
-    }
+      return accepted.length
+    })
 
     await createAuditEvent({
       actor,

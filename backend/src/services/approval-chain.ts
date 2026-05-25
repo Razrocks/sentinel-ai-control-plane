@@ -125,14 +125,25 @@ export async function resolveCoApproval(
   }
   // else: still pending (some co-approvals remain)
 
-  // Update parent approval if status changed
-  const updatedApproval = await prisma.approval.update({
-    where: { id: approvalId },
+  // B2: optimistic locking on the parent approval. We read the current version
+  // up front; the WHERE clause requires the version to still match, so two
+  // concurrent decide requests can't both transition the same approval —
+  // the second one's update affects 0 rows and we throw cleanly.
+  const currentVersion = approval.version
+  const updateResult = await prisma.approval.updateMany({
+    where: { id: approvalId, version: currentVersion },
     data: {
       status: newApprovalStatus,
+      version: { increment: 1 },
       ...(condition ? { condition } : {}),
     },
   })
+  if (updateResult.count === 0) {
+    throw new Error(
+      `Approval ${approvalId} was modified concurrently (expected version ${currentVersion}). Reload and retry.`,
+    )
+  }
+  const updatedApproval = await prisma.approval.findUniqueOrThrow({ where: { id: approvalId } })
 
   // 7. Log the audit event for this decision
   await logApprovalDecision({

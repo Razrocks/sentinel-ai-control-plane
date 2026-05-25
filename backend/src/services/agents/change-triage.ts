@@ -210,11 +210,15 @@ export async function triageChange(opts: {
 
   let blastRadiusItemsWritten = 0
   if (blast.status === 'success' && blast.output) {
-    // Replace existing blast radius rows
-    await prisma.blastRadiusItem.deleteMany({ where: { changeId: change.id } })
-    if (blast.output.items.length > 0) {
-      await prisma.blastRadiusItem.createMany({
-        data: blast.output.items.map((it) => ({
+    // B3: atomically replace blast radius rows. If createMany crashes after
+    // delete, change loses all blast radius data with no recovery — wrap both
+    // in a transaction so either both succeed or both roll back.
+    const items = blast.output.items
+    blastRadiusItemsWritten = await prisma.$transaction(async (tx) => {
+      await tx.blastRadiusItem.deleteMany({ where: { changeId: change.id } })
+      if (items.length === 0) return 0
+      await tx.blastRadiusItem.createMany({
+        data: items.map((it) => ({
           changeId: change.id,
           name: it.name,
           type: it.type,
@@ -225,8 +229,8 @@ export async function triageChange(opts: {
           details: it.details,
         })),
       })
-      blastRadiusItemsWritten = blast.output.items.length
-    }
+      return items.length
+    })
     await createAuditEvent({
       actor,
       action: 'blast_radius_computed',

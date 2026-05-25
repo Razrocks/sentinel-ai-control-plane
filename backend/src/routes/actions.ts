@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify'
 import { requireAuth } from '../middleware/auth.js'
 import { requireAction } from '../middleware/rbac.js'
+import { idempotency } from '../middleware/idempotency.js'
 import { prisma } from '../lib/prisma.js'
 import { NotFoundError, ValidationError } from '../lib/errors.js'
 import { resolveCoApproval } from '../services/approval-chain.js'
@@ -86,8 +87,10 @@ export async function actionsRoutes(app: FastifyInstance) {
    * Body: { decision: 'approved' | 'denied' | 'approved_with_condition', condition?: string }
    */
   app.post('/api/approvals/:id/decide', {
-    preHandler: [requireAuth],
+    preHandler: [requireAuth, idempotency],
   }, async (request, reply) => {
+    // If this is a replay, idempotency middleware already sent the cached response.
+    if (request.idempotencyHit) return
     const { id } = request.params as { id: string }
     const { decision, condition } = request.body as { decision: string; condition?: string }
 

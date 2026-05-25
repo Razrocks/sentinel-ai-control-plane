@@ -14,6 +14,8 @@ import { authRoutes } from './routes/auth.js'
 import { actionsRoutes } from './routes/actions.js'
 import { chatRoutes } from './routes/chat.js'
 import { agentsRoutes } from './routes/agents.js'
+import { metricsRoutes } from './routes/metrics.js'
+import { randomUUID } from 'node:crypto'
 
 // ─── Secret redaction ────────────────────────────────────
 // Hard lock: never log auth headers, cookies, API keys, JWTs, or env values.
@@ -36,6 +38,13 @@ const REDACT_PATHS = [
 ]
 
 const app = Fastify({
+  // D1: every request gets a stable traceId. Echoed back in response header
+  // so the client can include it in bug reports; logged on every log line via
+  // request-bound logger so log analysis can follow one request end-to-end.
+  genReqId: (req) => {
+    const inbound = req.headers['x-request-id']
+    return typeof inbound === 'string' && inbound.length > 0 ? inbound : randomUUID()
+  },
   logger: {
     level: config.nodeEnv === 'development' ? 'info' : 'warn',
     redact: { paths: REDACT_PATHS, censor: '[REDACTED]' },
@@ -44,6 +53,12 @@ const app = Fastify({
         ? { target: 'pino-pretty', options: { translateTime: 'HH:MM:ss', ignore: 'pid,hostname' } }
         : undefined,
   },
+})
+
+// Echo traceId back to client + bind to request logger automatically (Fastify default).
+app.addHook('onRequest', (request, reply, done) => {
+  reply.header('x-request-id', request.id)
+  done()
 })
 
 // ─── Defensive: strip any sk-ant-* keys from strings before they reach logs / clients
@@ -97,6 +112,7 @@ await app.register(settingsRoutes)
 await app.register(actionsRoutes)
 await app.register(chatRoutes)
 await app.register(agentsRoutes)
+await app.register(metricsRoutes)
 
 // ─── Health check ────────────────────────────────────────
 app.get('/api/health', async () => {

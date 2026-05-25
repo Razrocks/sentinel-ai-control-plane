@@ -301,6 +301,10 @@ model Approval {
   createdAt            DateTime       @default(now()) @map("created_at")
   linkedObjectId       String         @map("linked_object_id")
   whyYouAreRequired    String?        @map("why_you_are_required")
+  /// B2: optimistic locking. Every mutation must specify the expected current
+  /// version; concurrent writers see a version mismatch and one loses cleanly
+  /// instead of silently overwriting. Bumped on every state-changing update.
+  version              Int            @default(0)
 
   coApprovals    CoApproval[]
   decisionImpact DecisionImpact?
@@ -339,6 +343,10 @@ model DecisionImpact {
 model AuditEvent {
   id          String          @id @default(cuid())
   timestamp   DateTime        @default(now())
+  /// B4: monotonic per-process sequence — auto-incrementing autoincrement provides
+  /// deterministic ordering even when two events share the same millisecond
+  /// timestamp. Use this (NOT timestamp) for "show events in order" queries.
+  sequence    Int             @default(autoincrement())
   actor       String
   action      String
   objectType  AuditObjectType @map("object_type")
@@ -357,6 +365,7 @@ model AuditEvent {
 
   @@index([objectType, objectId])
   @@index([timestamp(sort: Desc)])
+  @@index([sequence(sort: Desc)])
   @@index([actor])
   @@map("audit_events")
 }
@@ -463,4 +472,32 @@ model ChatMessage {
   @@index([userId, createdAt(sort: Desc)])
   @@index([sessionId, createdAt])
   @@map("chat_messages")
+}
+
+// ─── B1: Idempotency keys ───────────────────────────────
+
+/// Per-(user, key) record of one mutation request. Action endpoints write
+/// here BEFORE performing the side effect; subsequent requests with the same
+/// (user, key) return the cached response instead of replaying the action.
+///
+/// Why per-user: an idempotency key is meaningless across users (different
+/// payloads, different auth). Scoping by userId prevents one user's keys from
+/// shadowing another's.
+model IdempotencyRecord {
+  id           String   @id @default(cuid())
+  userId       String   @map("user_id")
+  /// Client-supplied key from the Idempotency-Key header. Stable per intended action.
+  key          String
+  /// Hash of method + path + body — guards against the same key being reused
+  /// for a different action (which would be a client bug).
+  requestHash  String   @map("request_hash")
+  /// HTTP status code of the recorded response.
+  statusCode   Int      @map("status_code")
+  /// Cached response body (JSON). Bounded; large responses may be truncated.
+  responseBody String   @map("response_body")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  @@unique([userId, key])
+  @@index([createdAt(sort: Desc)])
+  @@map("idempotency_records")
 }

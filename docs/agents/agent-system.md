@@ -65,7 +65,7 @@ The agent is the *conversational entity* the user is talking to. The skill is th
 **Guardrails.**
 - Cannot revise `status`, `approvalState`, or `policyDecision` — only `riskLevel` and nested rows.
 - If `assess_change` returns a higher risk than intake, the change keeps the higher value (defensive).
-- If any skill returns `validation_failed`, the change retains its intake state and the agent emits an audit event with `result='blocked'`.
+- If any  skill returns `validation_failed`, the change retains its intake state and the agent emits an audit event with `result='blocked'`.
 
 **Failure mode.** Skills can fail; the agent reports per-skill outcomes and the change is still queryable. Operators see a "triage incomplete" indicator.
 

@@ -11,4 +11,14 @@ export const config = {
   anthropicApiKey: process.env.ANTHROPIC_API_KEY || '',
   corsOrigin: process.env.CORS_ORIGIN || 'http://localhost:5173',
   nodeEnv: process.env.NODE_ENV || 'development',
+  /**
+   * AES-256-GCM key, base64-encoded, 32 bytes after decode. Used to encrypt
+   * integration credentials (GitHub PAT, Slack bot tokens, webhook secrets)
+   * at rest. Generate with:
+   *   node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+   * Empty string disables integration writes (foundation can be installed
+   * before the operator generates a key; integration save endpoints will
+   * 503 until it's set).
+   */
+  encryptionKey: process.env.ENCRYPTION_KEY || '',
 } as const

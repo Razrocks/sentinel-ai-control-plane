@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { CheckCircle, XCircle, Server, Shield, Database, GitBranch, RefreshCw, Play, AlertTriangle, Clock, Settings2, Zap } from 'lucide-react'
 import { useRole } from '@/lib/roles'
+import { IntegrationsPanel } from '@/components/shared/IntegrationsPanel'
 
 interface ConnectionCard {
   name: string
@@ -47,7 +48,11 @@ export default function Settings() {
         </p>
       </div>
 
-      {/* Integrations */}
+      {/* Phase 2: real integration management (encryption, adapters, webhooks) */}
+      <IntegrationsPanel />
+
+      {/* Legacy system connections — kept for visibility, will fold into the
+          IntegrationsPanel once each provider has a real adapter (Phase 3). */}
       <div>
         <h2 className="text-sm font-medium text-text-muted uppercase tracking-wider mb-3">Integrations</h2>
         <div className="grid grid-cols-2 gap-4">

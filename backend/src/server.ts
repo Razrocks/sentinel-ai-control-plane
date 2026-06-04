@@ -15,6 +15,9 @@ import { actionsRoutes } from './routes/actions.js'
 import { chatRoutes } from './routes/chat.js'
 import { agentsRoutes } from './routes/agents.js'
 import { metricsRoutes } from './routes/metrics.js'
+import { webhookRoutes } from './routes/webhooks.js'
+import { setupRoutes } from './routes/setup.js'
+import { integrationsRoutes } from './routes/integrations.js'
 import { randomUUID } from 'node:crypto'
 
 // ─── Secret redaction ────────────────────────────────────
@@ -113,6 +116,9 @@ await app.register(actionsRoutes)
 await app.register(chatRoutes)
 await app.register(agentsRoutes)
 await app.register(metricsRoutes)
+await app.register(webhookRoutes)
+await app.register(setupRoutes)
+await app.register(integrationsRoutes)
 
 // ─── Health check ────────────────────────────────────────
 app.get('/api/health', async () => {

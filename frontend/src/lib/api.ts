@@ -24,11 +24,16 @@ export function setTokenGetter(fn: () => string | null) { _getToken = fn }
 export async function apiFetch<T>(path: string, options?: RequestInit): Promise<T> {
   const token = _getToken?.()
   const url = `${API_BASE}${path}`
+  // Only set Content-Type when we're actually sending a body. Fastify
+  // refuses an empty body when content-type is `application/json` (it
+  // expects valid JSON), so a POST/PATCH/DELETE with no body must skip
+  // the header entirely.
+  const hasBody = options?.body !== undefined && options.body !== null
   const res = await fetch(url, {
     ...options,
     credentials: 'include',
     headers: {
-      'Content-Type': 'application/json',
+      ...(hasBody ? { 'Content-Type': 'application/json' } : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...options?.headers,
     },
@@ -231,4 +236,93 @@ export const api = {
       defaultExecutionMode: string
       freezeWindow: string | null
     }>('/settings/health'),
+
+  // ─── Setup (Phase 2 bootstrap wizard) ─────────────────
+  getSetupStatus: () => apiFetch<SetupStatus>('/setup/status'),
+  recheckEnv: () => apiFetch<{ envChecks: EnvCheck[]; allEnvOk: boolean }>('/setup/env-check', { method: 'POST' }),
+  markSetupStep: (step: string) =>
+    apiFetch<{ state: SetupState; alreadyDone?: boolean }>(`/setup/step/${step}`, { method: 'POST' }),
+  completeSetup: () =>
+    apiFetch<{ ok: boolean; state?: SetupState; error?: string; message?: string }>('/setup/complete', {
+      method: 'POST',
+    }),
+
+  // ─── Real integrations (Phase 2.5+) ───────────────────
+  listIntegrations: () => apiFetch<{ integrations: IntegrationRow[] }>('/integrations'),
+  listIntegrationTypes: () =>
+    apiFetch<{ types: { type: string; adapterRegistered: boolean }[]; encryptionReady: boolean }>(
+      '/integrations/types',
+    ),
+  testIntegration: (type: string, credential: string) =>
+    apiFetch<{ ok: boolean; identity?: string; errorMessage?: string }>(`/integrations/${type}/test`, {
+      method: 'POST',
+      body: JSON.stringify({ credential }),
+    }),
+  connectIntegration: (
+    type: string,
+    payload: { credential: string; displayName: string; config?: Record<string, unknown> },
+  ) =>
+    apiFetch<{ integration: IntegrationRow }>(`/integrations/${type}/connect`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+  updateIntegrationScope: (type: string, config: Record<string, unknown>) =>
+    apiFetch<{ integration: IntegrationRow }>(`/integrations/${type}/scope`, {
+      method: 'PATCH',
+      body: JSON.stringify({ config }),
+    }),
+  peekIntegration: (type: string) =>
+    apiFetch<{ masked: string; hasCredential: boolean; decryptError?: boolean }>(
+      `/integrations/${type}/peek`,
+      { method: 'POST' },
+    ),
+  disconnectIntegration: (id: string) =>
+    apiFetch<{ integration: IntegrationRow }>(`/integrations/${id}`, { method: 'DELETE' }),
+}
+
+// ─── Setup + Integration types ──────────────────────────
+
+export interface EnvCheck {
+  key: string
+  required: boolean
+  present: boolean
+  label: string
+  fixHint?: string
+}
+
+export interface SetupState {
+  id: string
+  onboardingComplete: boolean
+  completedSteps: string[]
+  firstAdminUserId: string | null
+  completedAt: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface SetupStatus {
+  onboardingComplete: boolean
+  completedSteps: string[]
+  envChecks: EnvCheck[]
+  allEnvOk: boolean
+  hasFirstAdmin: boolean
+  adminCount: number
+}
+
+export type IntegrationType = 'github' | 'slack' | 'linear' | 'sentry' | 'pagerduty'
+export type IntegrationStatus = 'pending' | 'connected' | 'degraded' | 'disconnected'
+
+export interface IntegrationRow {
+  id: string
+  type: IntegrationType
+  displayName: string
+  status: IntegrationStatus
+  config: Record<string, unknown>
+  lastCheckedAt: string | null
+  lastError: string | null
+  createdBy: string
+  createdAt: string
+  updatedAt: string
+  hasCredential: boolean
+  hasWebhookSecret: boolean
 }

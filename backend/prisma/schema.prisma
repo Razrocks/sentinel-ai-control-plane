@@ -501,3 +501,137 @@ model IdempotencyRecord {
   @@index([createdAt(sort: Desc)])
   @@map("idempotency_records")
 }
+
+// ─── Integrations (Phase 2 foundation) ─────────────────────
+
+/// External system Sentinel can connect to. Each row represents one
+/// configured connection — credentials are AES-GCM encrypted; nothing
+/// sensitive is ever returned to clients.
+enum IntegrationType {
+  github
+  slack
+  linear
+  sentry
+  pagerduty
+}
+
+enum IntegrationStatus {
+  /// Wizard started but credentials not yet submitted.
+  pending
+  /// Credentials saved and a recent ping succeeded.
+  connected
+  /// Last ping failed (rate limit, revoked token, network).
+  degraded
+  /// User-initiated disconnect; row kept for audit.
+  disconnected
+}
+
+/// One configured connection to an external system.
+///
+/// Secrets handling (HARD RULES):
+///   - `credentialsCiphertext` is AES-256-GCM, key from ENCRYPTION_KEY env.
+///   - Plaintext credentials are never stored, never logged, never sent to
+///     the client. Settings APIs return scope + status only.
+///   - Decrypt is on-use, in-process; result never crosses the network.
+model Integration {
+  id               String              @id @default(cuid())
+  type             IntegrationType
+  /// Display name — `"GitHub: razeenmeera"` or `"Slack: sentinel-ws"`. Surfaced in Settings.
+  displayName      String              @map("display_name")
+  status           IntegrationStatus   @default(pending)
+  /// Encrypted credentials blob (base64). Format: `<iv>.<authTag>.<ciphertext>`.
+  /// Never exposed via any API. Nullable so a `pending` row can exist before
+  /// the user enters a token.
+  credentialsCiphertext String?        @map("credentials_ciphertext")
+  /// Non-secret scope/config — repos[], channels[], etc. Safe to expose.
+  config           Json                @default("{}")
+  /// Outbound webhook secret if Sentinel registered one with the provider.
+  /// Encrypted same as credentials; only needed for signature verification.
+  webhookSecretCiphertext String?      @map("webhook_secret_ciphertext")
+  /// Last time we successfully pinged the provider. Drives the green/yellow
+  /// dot in the Settings card.
+  lastCheckedAt    DateTime?           @map("last_checked_at")
+  /// Stringified provider error from the last failed ping. Bounded to 1KB.
+  lastError        String?             @map("last_error")
+  createdBy        String              @map("created_by")
+  createdAt        DateTime            @default(now()) @map("created_at")
+  updatedAt        DateTime            @updatedAt @map("updated_at")
+
+  webhookEvents    WebhookEvent[]
+  externalRefs     ExternalRef[]
+
+  /// One active integration per type for now. Future: multi-account per type
+  /// will require a tuple key (type, accountId). Drop this constraint then.
+  @@unique([type])
+  @@index([status])
+  @@map("integrations")
+}
+
+/// Every inbound webhook is recorded: dedup, replay, audit. The body is
+/// stored raw so we can reprocess if our handler had a bug. Old rows are
+/// pruned by a scheduled job; defaults to 90 days.
+model WebhookEvent {
+  id            String       @id @default(cuid())
+  integrationId String       @map("integration_id")
+  integration   Integration  @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  /// Provider-supplied event id (GitHub X-GitHub-Delivery, Slack event id, etc.).
+  /// Combined with integrationId is the dedup key — replays from the provider
+  /// hit the unique index and are no-op'd.
+  providerEventId String     @map("provider_event_id")
+  /// Provider-supplied event type (pull_request, push, message, etc.).
+  eventType     String       @map("event_type")
+  /// Raw request body, as bytes from the wire. Used for HMAC re-verification
+  /// and reprocessing. Bounded to 256KB at the handler.
+  rawBody       String       @map("raw_body")
+  /// Outcome of our handler: 'processed' | 'skipped' | 'failed'.
+  result        String
+  /// Error message when result='failed'. Truncated.
+  errorMessage  String?      @map("error_message")
+  receivedAt    DateTime     @default(now()) @map("received_at")
+
+  @@unique([integrationId, providerEventId])
+  @@index([receivedAt(sort: Desc)])
+  @@index([integrationId, eventType])
+  @@map("webhook_events")
+}
+
+/// Cross-system id mapping. Lets the UI render "this Change is also
+/// GitHub PR #42 + Linear ENG-101" and lets agents look the other direction
+/// ("did GitHub PR #42 originate from a Sentinel Change?").
+model ExternalRef {
+  id              String       @id @default(cuid())
+  integrationId   String       @map("integration_id")
+  integration     Integration  @relation(fields: [integrationId], references: [id], onDelete: Cascade)
+  /// Sentinel object pointer.
+  sentinelType    AuditObjectType @map("sentinel_type")
+  sentinelId      String       @map("sentinel_id")
+  /// Foreign system pointer. e.g. ("github", "PR", "https://github.com/x/y/pull/42").
+  externalKind    String       @map("external_kind")
+  externalId      String       @map("external_id")
+  externalUrl     String?      @map("external_url")
+  /// Optional metadata blob (PR title, ticket status snapshot, etc.).
+  meta            Json         @default("{}")
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
+
+  @@unique([integrationId, externalKind, externalId])
+  @@index([sentinelType, sentinelId])
+  @@map("external_refs")
+}
+
+/// First-run admin onboarding. Single row keyed by `singleton: true` — if
+/// this row exists and `onboardingComplete=true`, the setup wizard is
+/// skipped. Otherwise `/setup` redirect catches every route until done.
+model SetupState {
+  id                  String   @id @default(cuid())
+  singleton           Boolean  @unique @default(true)
+  onboardingComplete  Boolean  @default(false) @map("onboarding_complete")
+  /// Step names already done: ["env_check", "encryption_key_generated", "first_admin", ...].
+  completedSteps      String[] @default([]) @map("completed_steps")
+  firstAdminUserId    String?  @map("first_admin_user_id")
+  completedAt         DateTime? @map("completed_at")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  @@map("setup_state")
+}

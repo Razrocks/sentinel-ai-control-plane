@@ -20,6 +20,12 @@ export function TopBar() {
   const navigate = useNavigate();
   const [envOpen, setEnvOpen] = useState(false);
   const [roleOpen, setRoleOpen] = useState(false);
+  // Only admins may impersonate other roles. Everyone else sees a static
+  // label of their own role so the UI still shows context, but the
+  // dropdown that lets a non-admin grant themselves additional permissions
+  // is hidden. The backend still enforces RBAC on every mutation — this is
+  // a UX guard, not the security boundary.
+  const canSwitchRole = user?.role === 'admin';
 
   const handleLogout = async () => {
     await logout();
@@ -100,36 +106,49 @@ export function TopBar() {
           <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-red-500" />
         </button>
 
-        {/* Role switcher */}
-        <div className="relative" ref={roleRef}>
-          <button
-            type="button"
-            onClick={() => setRoleOpen(!roleOpen)}
-            className="flex items-center gap-2 rounded-md border border-border-subtle bg-surface-raised px-3 py-1.5 text-sm text-text-secondary hover:text-text-primary transition-colors whitespace-nowrap"
-          >
+        {/* Role badge / switcher — non-admins see a static badge of their own
+            role; admins get the dropdown for impersonation during demos and
+            governance reviews. */}
+        {canSwitchRole ? (
+          <div className="relative" ref={roleRef}>
+            <button
+              type="button"
+              onClick={() => setRoleOpen(!roleOpen)}
+              className="flex items-center gap-2 rounded-md border border-border-subtle bg-surface-raised px-3 py-1.5 text-sm text-text-secondary hover:text-text-primary transition-colors whitespace-nowrap"
+              title="Impersonate role (admin only)"
+            >
+              <CircleUser className="h-4 w-4 flex-shrink-0" />
+              <span className="hidden sm:inline">{config.label}</span>
+              <ChevronDown className={cn('h-3.5 w-3.5 transition-transform flex-shrink-0', roleOpen && 'rotate-180')} />
+            </button>
+
+            {roleOpen && (
+              <div className="absolute right-0 top-full mt-1 w-64 rounded-lg border border-border bg-surface-raised shadow-lg py-1 z-50">
+                <div className="px-3 py-1.5 text-[10px] uppercase tracking-wider text-text-muted border-b border-border-subtle">
+                  Impersonate (admin)
+                </div>
+                {roleList.map(r => (
+                  <button
+                    key={r.id}
+                    onClick={() => { setRole(r.id); setRoleOpen(false); }}
+                    className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-surface-overlay transition-colors"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <div className={cn('text-sm', r.id === role ? 'text-text-primary font-medium' : 'text-text-secondary')}>{r.label}</div>
+                      <div className="text-xs text-text-muted truncate">{r.description}</div>
+                    </div>
+                    {r.id === role && <Check className="h-3.5 w-3.5 text-accent flex-shrink-0" />}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="flex items-center gap-2 rounded-md border border-border-subtle bg-surface-raised px-3 py-1.5 text-sm text-text-secondary whitespace-nowrap">
             <CircleUser className="h-4 w-4 flex-shrink-0" />
             <span className="hidden sm:inline">{config.label}</span>
-            <ChevronDown className={cn('h-3.5 w-3.5 transition-transform flex-shrink-0', roleOpen && 'rotate-180')} />
-          </button>
-
-          {roleOpen && (
-            <div className="absolute right-0 top-full mt-1 w-64 rounded-lg border border-border bg-surface-raised shadow-lg py-1 z-50">
-              {roleList.map(r => (
-                <button
-                  key={r.id}
-                  onClick={() => { setRole(r.id); setRoleOpen(false); }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-surface-overlay transition-colors"
-                >
-                  <div className="flex-1 min-w-0">
-                    <div className={cn('text-sm', r.id === role ? 'text-text-primary font-medium' : 'text-text-secondary')}>{r.label}</div>
-                    <div className="text-xs text-text-muted truncate">{r.description}</div>
-                  </div>
-                  {r.id === role && <Check className="h-3.5 w-3.5 text-accent flex-shrink-0" />}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+          </div>
+        )}
 
         {/* User name + Logout */}
         {user && (

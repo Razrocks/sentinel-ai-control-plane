@@ -110,11 +110,14 @@ export function useApprovalDecision() {
       queryClient.invalidateQueries({ queryKey: ['accessRequests'] })
       queryClient.invalidateQueries({ queryKey: ['auditEvents'] })
     },
-    onError: (err) => {
-      // On a stale-version conflict, refetch approvals immediately so the
-      // user sees the new state as soon as they dismiss the error.
+    onError: async (err) => {
+      // On a stale-version conflict, force a refetch (not just invalidate)
+      // so the approval cards re-render with the new version BEFORE the
+      // user clicks retry. `refetchQueries` blocks on the network round-trip
+      // so the next render has fresh `approval.version` in scope, and the
+      // user's next click sends the correct `If-Match`.
       if (err instanceof ApprovalConflictError) {
-        queryClient.invalidateQueries({ queryKey: ['approvals'] })
+        await queryClient.refetchQueries({ queryKey: ['approvals'], type: 'active' })
       }
     },
   })

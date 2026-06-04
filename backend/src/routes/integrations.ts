@@ -239,6 +239,129 @@ export async function integrationsRoutes(app: FastifyInstance) {
   )
 
   /**
+   * GET /api/integrations/:type/scopes — list installable scopes (repos,
+   * channels, projects) using the stored credential. The wizard pulls
+   * this after credential save to render the scope picker.
+   */
+  app.get<{ Params: { type: string } }>(
+    '/api/integrations/:type/scopes',
+    { preHandler: [requireAuth, requireRole('admin')] },
+    async (request, reply) => {
+      const { type } = request.params
+      if (!isValidType(type)) throw new ValidationError(`Unknown integration type: ${type}`)
+      const integration = await prisma.integration.findUnique({ where: { type } })
+      if (!integration?.credentialsCiphertext) {
+        throw new NotFoundError('Integration', type)
+      }
+      if (!hasAdapter(type)) {
+        return reply.status(501).send({ error: 'NO_ADAPTER', message: 'Adapter not registered.' })
+      }
+      const adapter = getAdapter(type)
+      if (!adapter.listScopes) {
+        return { scopes: [] }
+      }
+      const credential = decrypt(integration.credentialsCiphertext)
+      const scopes = await adapter.listScopes(integration, credential)
+      return { scopes }
+    },
+  )
+
+  /**
+   * POST /api/integrations/:type/register-webhook — register a webhook
+   * for each selected scope. Generates a shared secret (one per
+   * integration, reused across scopes), encrypts it, stores
+   * providerWebhookIds on config.
+   *
+   * Body: { scopeIds: string[], publicBaseUrl: string }
+   *
+   * publicBaseUrl is the externally-reachable Sentinel URL — providers
+   * post to `<publicBaseUrl>/api/webhooks/<type>`. We never assume our
+   * own request host because Sentinel may be behind a tunnel/proxy.
+   */
+  app.post<{
+    Params: { type: string }
+    Body: { scopeIds: string[]; publicBaseUrl: string }
+  }>(
+    '/api/integrations/:type/register-webhook',
+    { preHandler: [requireAuth, requireRole('admin')] },
+    async (request, reply) => {
+      const { type } = request.params
+      if (!isValidType(type)) throw new ValidationError(`Unknown integration type: ${type}`)
+      const { scopeIds, publicBaseUrl } = request.body
+      if (!Array.isArray(scopeIds) || scopeIds.length === 0) {
+        throw new ValidationError('scopeIds array required (at least one)')
+      }
+      if (!publicBaseUrl) throw new ValidationError('publicBaseUrl required')
+
+      const integration = await prisma.integration.findUnique({ where: { type } })
+      if (!integration?.credentialsCiphertext) {
+        throw new NotFoundError('Integration', type)
+      }
+      if (!hasAdapter(type)) {
+        return reply.status(501).send({ error: 'NO_ADAPTER', message: 'Adapter not registered.' })
+      }
+      const adapter = getAdapter(type)
+      if (!adapter.registerWebhook) {
+        return reply.status(501).send({ error: 'INBOUND_NOT_SUPPORTED' })
+      }
+
+      const credential = decrypt(integration.credentialsCiphertext)
+      const deliveryUrl = `${publicBaseUrl.replace(/\/$/, '')}/api/webhooks/${type}`
+
+      // First scope's registration determines the shared secret — adapter
+      // mints one per call. We reuse the same secret across subsequent
+      // scopes so the webhook router only needs to track a single secret
+      // per integration.
+      const providerWebhookIds: string[] = []
+      const failures: { scopeId: string; error: string }[] = []
+      let sharedSecret: string | null = null
+
+      for (const scopeId of scopeIds) {
+        try {
+          const registration = await adapter.registerWebhook(integration, credential, deliveryUrl, scopeId)
+          // Compose `scopeId:hookId` so unregisterWebhook can parse owner/repo back out.
+          providerWebhookIds.push(`${scopeId}:${registration.providerWebhookId}`)
+          if (!sharedSecret) sharedSecret = registration.sharedSecret
+        } catch (err) {
+          failures.push({
+            scopeId,
+            error: err instanceof Error ? err.message : String(err),
+          })
+        }
+      }
+
+      if (!sharedSecret) {
+        return reply.status(400).send({
+          error: 'WEBHOOK_REGISTRATION_FAILED',
+          message: 'No webhooks could be registered.',
+          failures,
+        })
+      }
+
+      const updated = await prisma.integration.update({
+        where: { id: integration.id },
+        data: {
+          status: 'connected',
+          webhookSecretCiphertext: encrypt(sharedSecret),
+          config: {
+            ...(integration.config as object),
+            scopes: scopeIds,
+            providerWebhookIds,
+          } as Prisma.InputJsonValue,
+          lastCheckedAt: new Date(),
+          lastError: failures.length > 0 ? `Partial: ${failures.length} of ${scopeIds.length} failed` : null,
+        },
+      })
+
+      return {
+        integration: presentIntegration(updated),
+        registered: providerWebhookIds.length,
+        failures,
+      }
+    },
+  )
+
+  /**
    * DELETE /api/integrations/:id — disconnect. Wipes the encrypted
    * credential, marks status=disconnected. Keeps webhook_events for audit.
    * Adapter's unregisterWebhook is best-effort; we log if it fails but

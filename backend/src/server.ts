@@ -18,6 +18,9 @@ import { metricsRoutes } from './routes/metrics.js'
 import { webhookRoutes } from './routes/webhooks.js'
 import { setupRoutes } from './routes/setup.js'
 import { integrationsRoutes } from './routes/integrations.js'
+// Side-effect import: registers every provider's adapter on boot so the
+// webhook router + integrations CRUD can dispatch by type.
+import './integrations/index.js'
 import { randomUUID } from 'node:crypto'
 
 // ─── Secret redaction ────────────────────────────────────

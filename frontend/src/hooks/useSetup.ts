@@ -83,3 +83,29 @@ export function useDisconnectIntegration() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['integrations:list'] }),
   })
 }
+
+export function useIntegrationScopes(type: string | null) {
+  return useQuery({
+    queryKey: ['integrations:scopes', type],
+    queryFn: () => api.listIntegrationScopes(type!),
+    enabled: !!type,
+    /** Scopes can be expensive to fetch (GitHub paginates); cache 60s. */
+    staleTime: 60_000,
+  })
+}
+
+export function useRegisterWebhook() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({
+      type,
+      scopeIds,
+      publicBaseUrl,
+    }: {
+      type: string
+      scopeIds: string[]
+      publicBaseUrl: string
+    }) => api.registerIntegrationWebhook(type, { scopeIds, publicBaseUrl }),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['integrations:list'] }),
+  })
+}

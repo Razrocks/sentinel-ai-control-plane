@@ -20,6 +20,8 @@ import {
   useConnectIntegration,
   useTestIntegration,
   useDisconnectIntegration,
+  useIntegrationScopes,
+  useRegisterWebhook,
 } from '@/hooks/useSetup'
 import { useRole } from '@/lib/roles'
 import type { IntegrationRow, IntegrationStatus } from '@/lib/api'
@@ -224,16 +226,31 @@ function StatusDot({ status }: { status: IntegrationStatus }) {
   return <RefreshCw className="w-3.5 h-3.5 text-text-muted" />
 }
 
-// ─── Connect modal ──────────────────────────────────────
+// ─── Connect wizard (3 steps) ───────────────────────────
+
+type WizardStep = 'creds' | 'scopes' | 'webhooks' | 'done'
 
 function ConnectModal({ type, onClose }: { type: string; onClose: () => void }) {
+  const [step, setStep] = useState<WizardStep>('creds')
   const [credential, setCredential] = useState('')
   const [displayName, setDisplayName] = useState(`${TYPE_LABELS[type] ?? type}`)
   const [testResult, setTestResult] = useState<{ ok: boolean; identity?: string; errorMessage?: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [selectedScopes, setSelectedScopes] = useState<Set<string>>(new Set())
+  const [publicBaseUrl, setPublicBaseUrl] = useState(() =>
+    window.location.origin.replace(':5173', ':3001'),
+  )
+  const [webhookResult, setWebhookResult] = useState<{
+    registered: number
+    failures: { scopeId: string; error: string }[]
+  } | null>(null)
+
   const test = useTestIntegration()
   const connect = useConnectIntegration()
+  const scopesQuery = useIntegrationScopes(step === 'scopes' ? type : null)
+  const registerWebhook = useRegisterWebhook()
 
+  // ── Step: creds ────────────────────────────────────
   const handleTest = async () => {
     setError(null)
     try {
@@ -244,93 +261,302 @@ function ConnectModal({ type, onClose }: { type: string; onClose: () => void }) 
     }
   }
 
-  const handleConnect = async () => {
+  const handleSaveCreds = async () => {
     setError(null)
     try {
       await connect.mutateAsync({ type, payload: { credential, displayName } })
-      onClose()
+      setStep('scopes')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Connect failed')
     }
   }
 
+  // ── Step: scopes ───────────────────────────────────
+  const toggleScope = (id: string) => {
+    setSelectedScopes((prev) => {
+      const next = new Set(prev)
+      if (next.has(id)) next.delete(id)
+      else next.add(id)
+      return next
+    })
+  }
+
+  // ── Step: webhooks ─────────────────────────────────
+  const handleRegisterWebhooks = async () => {
+    setError(null)
+    try {
+      const result = await registerWebhook.mutateAsync({
+        type,
+        scopeIds: Array.from(selectedScopes),
+        publicBaseUrl,
+      })
+      setWebhookResult({ registered: result.registered, failures: result.failures })
+      setStep('done')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Webhook registration failed')
+    }
+  }
+
   return (
     <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
-      <div className="w-full max-w-md rounded-lg border border-border bg-surface shadow-xl">
-        <div className="p-4 border-b border-border">
-          <h3 className="text-sm font-semibold text-text-primary">
-            Connect {TYPE_LABELS[type] ?? type}
-          </h3>
-          <p className="text-xs text-text-muted mt-0.5">
-            Credentials are encrypted with AES-256-GCM before storage. The plaintext token never
-            leaves Sentinel.
-          </p>
-        </div>
-        <div className="p-4 space-y-3">
+      <div className="w-full max-w-xl rounded-lg border border-border bg-surface shadow-xl">
+        <div className="p-4 border-b border-border flex items-center justify-between">
           <div>
-            <label className="text-xs text-text-muted">Display name</label>
-            <input
-              type="text"
-              value={displayName}
-              onChange={(e) => setDisplayName(e.target.value)}
-              className="mt-1 w-full bg-surface-raised border border-border rounded px-3 py-2 text-sm text-text-primary"
-            />
+            <h3 className="text-sm font-semibold text-text-primary">
+              Connect {TYPE_LABELS[type] ?? type}
+            </h3>
+            <p className="text-xs text-text-muted mt-0.5">
+              Step {step === 'creds' ? 1 : step === 'scopes' ? 2 : step === 'webhooks' ? 3 : 4} of 3
+              · {stepLabel(step)}
+            </p>
           </div>
-          <div>
-            <label className="text-xs text-text-muted">Credential / token</label>
-            <input
-              type="password"
-              value={credential}
-              onChange={(e) => setCredential(e.target.value)}
-              placeholder="paste here · never logged"
-              className="mt-1 w-full bg-surface-raised border border-border rounded px-3 py-2 text-sm text-text-primary font-mono"
-              autoComplete="off"
-            />
-          </div>
-          {testResult && (
-            <div
-              className={`text-xs rounded p-2 ${
-                testResult.ok ? 'bg-status-approved/10 text-status-approved' : 'bg-status-denied/10 text-status-denied'
-              }`}
-            >
-              {testResult.ok
-                ? `✓ Connected as ${testResult.identity ?? 'unknown'}`
-                : `✗ ${testResult.errorMessage ?? 'Connection failed'}`}
-            </div>
-          )}
-          {error && (
-            <div className="text-xs text-status-denied bg-status-denied/10 rounded p-2">{error}</div>
-          )}
-        </div>
-        <div className="p-4 border-t border-border flex justify-between gap-2">
-          <button
-            onClick={onClose}
-            className="text-xs px-3 py-1.5 text-text-secondary hover:text-text-primary rounded"
-          >
-            Cancel
+          <button onClick={onClose} className="text-text-muted hover:text-text-primary text-lg">
+            ×
           </button>
-          <div className="flex gap-2">
-            <button
-              onClick={handleTest}
-              disabled={!credential || test.isPending}
-              className="text-xs px-3 py-1.5 rounded bg-surface-raised border border-border-subtle text-text-secondary disabled:opacity-40"
-            >
-              {test.isPending ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              ) : (
-                'Test'
-              )}
-            </button>
-            <button
-              onClick={handleConnect}
-              disabled={!credential || !displayName || connect.isPending}
-              className="text-xs font-medium px-3 py-1.5 rounded bg-accent text-white disabled:opacity-40"
-            >
-              {connect.isPending ? 'Saving...' : 'Save & connect'}
-            </button>
-          </div>
         </div>
+
+        {/* Step 1: credentials */}
+        {step === 'creds' && (
+          <>
+            <div className="p-4 space-y-3">
+              <div>
+                <label className="text-xs text-text-muted">Display name</label>
+                <input
+                  type="text"
+                  value={displayName}
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  className="mt-1 w-full bg-surface-raised border border-border rounded px-3 py-2 text-sm text-text-primary"
+                />
+              </div>
+              <div>
+                <label className="text-xs text-text-muted">
+                  {type === 'github' ? 'Personal Access Token (PAT)' : 'Credential / token'}
+                </label>
+                <input
+                  type="password"
+                  value={credential}
+                  onChange={(e) => setCredential(e.target.value)}
+                  placeholder="paste here · encrypted at rest · never logged"
+                  className="mt-1 w-full bg-surface-raised border border-border rounded px-3 py-2 text-sm text-text-primary font-mono"
+                  autoComplete="off"
+                />
+                {type === 'github' && (
+                  <p className="text-[10px] text-text-muted mt-1">
+                    Required scopes: <code>repo</code>, <code>admin:repo_hook</code>.
+                  </p>
+                )}
+              </div>
+              {testResult && (
+                <div
+                  className={`text-xs rounded p-2 ${
+                    testResult.ok
+                      ? 'bg-status-approved/10 text-status-approved'
+                      : 'bg-status-denied/10 text-status-denied'
+                  }`}
+                >
+                  {testResult.ok
+                    ? `✓ Authenticated as ${testResult.identity ?? 'unknown'}`
+                    : `✗ ${testResult.errorMessage ?? 'Connection failed'}`}
+                </div>
+              )}
+              {error && (
+                <div className="text-xs text-status-denied bg-status-denied/10 rounded p-2">
+                  {error}
+                </div>
+              )}
+            </div>
+            <div className="p-4 border-t border-border flex justify-between gap-2">
+              <button
+                onClick={onClose}
+                className="text-xs px-3 py-1.5 text-text-secondary hover:text-text-primary rounded"
+              >
+                Cancel
+              </button>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleTest}
+                  disabled={!credential || test.isPending}
+                  className="text-xs px-3 py-1.5 rounded bg-surface-raised border border-border-subtle text-text-secondary disabled:opacity-40"
+                >
+                  {test.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Test'}
+                </button>
+                <button
+                  onClick={handleSaveCreds}
+                  disabled={!credential || !displayName || connect.isPending || !testResult?.ok}
+                  className="text-xs font-medium px-3 py-1.5 rounded bg-accent text-white disabled:opacity-40"
+                >
+                  {connect.isPending ? 'Saving...' : 'Save & continue →'}
+                </button>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* Step 2: scopes */}
+        {step === 'scopes' && (
+          <>
+            <div className="p-4 space-y-3">
+              <p className="text-xs text-text-secondary">
+                Select the {type === 'github' ? 'repositories' : 'scopes'} Sentinel should watch.
+              </p>
+              {scopesQuery.isLoading && (
+                <div className="flex items-center gap-2 text-xs text-text-muted">
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading scopes...
+                </div>
+              )}
+              {scopesQuery.error && (
+                <div className="text-xs text-status-denied bg-status-denied/10 rounded p-2">
+                  {(scopesQuery.error as Error).message}
+                </div>
+              )}
+              {scopesQuery.data && (
+                <div className="max-h-64 overflow-y-auto border border-border-subtle rounded">
+                  {scopesQuery.data.scopes.length === 0 ? (
+                    <div className="p-3 text-xs text-text-muted">No scopes available.</div>
+                  ) : (
+                    scopesQuery.data.scopes.map((s) => (
+                      <label
+                        key={s.id}
+                        className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-surface-raised cursor-pointer border-b border-border-subtle last:border-b-0"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selectedScopes.has(s.id)}
+                          onChange={() => toggleScope(s.id)}
+                          className="accent-accent"
+                        />
+                        <span className="text-text-primary truncate">{s.label}</span>
+                      </label>
+                    ))
+                  )}
+                </div>
+              )}
+              <p className="text-[10px] text-text-muted">
+                {selectedScopes.size} selected
+              </p>
+            </div>
+            <div className="p-4 border-t border-border flex justify-between gap-2">
+              <button
+                onClick={() => setStep('creds')}
+                className="text-xs px-3 py-1.5 text-text-secondary hover:text-text-primary rounded"
+              >
+                ← Back
+              </button>
+              <button
+                onClick={() => setStep('webhooks')}
+                disabled={selectedScopes.size === 0}
+                className="text-xs font-medium px-3 py-1.5 rounded bg-accent text-white disabled:opacity-40"
+              >
+                Continue →
+              </button>
+            </div>
+          </>
+        )}
+
+        {/* Step 3: webhooks */}
+        {step === 'webhooks' && (
+          <>
+            <div className="p-4 space-y-3">
+              <p className="text-xs text-text-secondary">
+                Sentinel will register a webhook on each selected scope pointing to its public URL.
+              </p>
+              <div>
+                <label className="text-xs text-text-muted">Public base URL (Sentinel backend)</label>
+                <input
+                  type="text"
+                  value={publicBaseUrl}
+                  onChange={(e) => setPublicBaseUrl(e.target.value)}
+                  className="mt-1 w-full bg-surface-raised border border-border rounded px-3 py-2 text-sm text-text-primary font-mono"
+                />
+                <p className="text-[10px] text-text-muted mt-1">
+                  Webhook delivery URL: <code>{publicBaseUrl}/api/webhooks/{type}</code>
+                </p>
+                <p className="text-[10px] text-text-muted">
+                  GitHub must be able to reach this URL. For local dev use a tunnel (ngrok, cloudflared)
+                  and paste its HTTPS URL here.
+                </p>
+              </div>
+              <div className="text-xs text-text-secondary">
+                Will register webhooks on {selectedScopes.size}{' '}
+                {selectedScopes.size === 1 ? 'scope' : 'scopes'}:
+                <ul className="list-disc pl-5 mt-1 text-text-muted">
+                  {Array.from(selectedScopes).slice(0, 5).map((s) => (
+                    <li key={s}>{s}</li>
+                  ))}
+                  {selectedScopes.size > 5 && <li>… and {selectedScopes.size - 5} more</li>}
+                </ul>
+              </div>
+              {error && (
+                <div className="text-xs text-status-denied bg-status-denied/10 rounded p-2">
+                  {error}
+                </div>
+              )}
+            </div>
+            <div className="p-4 border-t border-border flex justify-between gap-2">
+              <button
+                onClick={() => setStep('scopes')}
+                className="text-xs px-3 py-1.5 text-text-secondary hover:text-text-primary rounded"
+              >
+                ← Back
+              </button>
+              <button
+                onClick={handleRegisterWebhooks}
+                disabled={registerWebhook.isPending || !publicBaseUrl}
+                className="text-xs font-medium px-3 py-1.5 rounded bg-accent text-white disabled:opacity-40"
+              >
+                {registerWebhook.isPending ? 'Registering...' : 'Register webhooks'}
+              </button>
+            </div>
+          </>
+        )}
+
+        {/* Step 4: done */}
+        {step === 'done' && (
+          <>
+            <div className="p-4 space-y-3">
+              <div className="flex items-center gap-2 text-status-approved">
+                <CheckCircle2 className="w-5 h-5" />
+                <span className="text-sm font-medium">
+                  {webhookResult?.registered ?? 0} webhook{webhookResult?.registered === 1 ? '' : 's'} registered
+                </span>
+              </div>
+              {webhookResult && webhookResult.failures.length > 0 && (
+                <div className="text-xs">
+                  <p className="text-status-pending mb-1">
+                    {webhookResult.failures.length} failed:
+                  </p>
+                  <ul className="list-disc pl-5 text-text-muted space-y-1">
+                    {webhookResult.failures.map((f) => (
+                      <li key={f.scopeId}>
+                        <code>{f.scopeId}</code> — {f.error}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+              <p className="text-xs text-text-muted">
+                {TYPE_LABELS[type] ?? type} is now connected. Trigger a test event from the provider
+                to confirm end-to-end delivery.
+              </p>
+            </div>
+            <div className="p-4 border-t border-border flex justify-end">
+              <button
+                onClick={onClose}
+                className="text-xs font-medium px-3 py-1.5 rounded bg-accent text-white"
+              >
+                Finish
+              </button>
+            </div>
+          </>
+        )}
       </div>
     </div>
   )
+}
+
+function stepLabel(step: WizardStep): string {
+  if (step === 'creds') return 'Credentials'
+  if (step === 'scopes') return 'Select scopes'
+  if (step === 'webhooks') return 'Register webhooks'
+  return 'Done'
 }

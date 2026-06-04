@@ -278,6 +278,28 @@ export const api = {
     ),
   disconnectIntegration: (id: string) =>
     apiFetch<{ integration: IntegrationRow }>(`/integrations/${id}`, { method: 'DELETE' }),
+
+  /** Phase 3 — scope picker + webhook registration on a connected integration. */
+  listIntegrationScopes: (type: string) =>
+    apiFetch<{ scopes: IntegrationScope[] }>(`/integrations/${type}/scopes`),
+  registerIntegrationWebhook: (
+    type: string,
+    payload: { scopeIds: string[]; publicBaseUrl: string },
+  ) =>
+    apiFetch<{
+      integration: IntegrationRow
+      registered: number
+      failures: { scopeId: string; error: string }[]
+    }>(`/integrations/${type}/register-webhook`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    }),
+}
+
+export interface IntegrationScope {
+  id: string
+  label: string
+  meta?: Record<string, unknown>
 }
 
 // ─── Setup + Integration types ──────────────────────────

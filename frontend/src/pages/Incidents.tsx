@@ -1,13 +1,40 @@
+/**
+ * Incidents — list of operational issues.
+ *
+ * Phase 4 rebuild matching Changes/Approvals visual system:
+ *   - Prominent severity badge with ring
+ *   - Color-tinted next-action chip
+ *   - KB-fix / Safe-fix support signals as ring chips
+ *   - Bigger icon block at row start
+ */
 import { Link } from 'react-router-dom'
-import { ArrowRight, AlertTriangle, BookOpen, Wrench } from 'lucide-react'
+import {
+  ArrowRight,
+  AlertTriangle,
+  BookOpen,
+  Wrench,
+  Clock,
+  ArrowUpRight,
+  CheckCircle2,
+} from 'lucide-react'
 import { createColumnHelper } from '@tanstack/react-table'
 import { useIncidents } from '@/hooks/useData'
-import { RiskBadge, SystemChip } from '@/components/shared'
+import { SystemChip } from '@/components/shared'
 import { DataTable } from '@/components/shared/DataTable'
-import { timeAgo } from '@/lib/utils'
+import { timeAgo, cn } from '@/lib/utils'
+import { Badge } from '@/components/ui/badge'
+import { Skeleton } from '@/components/ui/skeleton'
 import type { Incident } from '@/types'
 
-const sevToRisk = { sev1: 'critical', sev2: 'high', sev3: 'medium', sev4: 'low' } as const
+const sevToBadge: Record<
+  string,
+  { variant: 'risk_critical' | 'risk_high' | 'risk_medium' | 'risk_low'; label: string }
+> = {
+  sev1: { variant: 'risk_critical', label: 'SEV1' },
+  sev2: { variant: 'risk_high', label: 'SEV2' },
+  sev3: { variant: 'risk_medium', label: 'SEV3' },
+  sev4: { variant: 'risk_low', label: 'SEV4' },
+}
 
 const statusLabel: Record<string, string> = {
   new: 'New',
@@ -17,14 +44,48 @@ const statusLabel: Record<string, string> = {
   resolved: 'Resolved',
 }
 
-function getNextAction(incident: Incident): { label: string; color: string } {
-  if (incident.severity === 'sev1') return { label: 'Urgent triage', color: 'text-risk-critical bg-risk-critical/10' }
-  if (incident.severity === 'sev2') return { label: 'Needs attention', color: 'text-risk-high bg-risk-high/10' }
-  if (incident.isRecurring) return { label: 'KB fix available', color: 'text-status-approved bg-status-approved/10' }
-  if (incident.status === 'new') return { label: 'Triage needed', color: 'text-status-pending bg-status-pending/10' }
-  if (incident.status === 'investigating') return { label: 'In progress', color: 'text-accent bg-accent/10' }
-  if (incident.status === 'resolved') return { label: 'Resolved', color: 'text-text-muted bg-surface-raised' }
-  return { label: 'Monitoring', color: 'text-text-muted bg-surface-raised' }
+interface NextAction {
+  icon: React.ReactNode
+  label: string
+  className: string
+}
+
+function getNextAction(incident: Incident): NextAction {
+  if (incident.severity === 'sev1')
+    return {
+      icon: <AlertTriangle className="h-3 w-3" />,
+      label: 'Urgent triage',
+      className: 'bg-risk-critical/15 text-risk-critical ring-1 ring-risk-critical/30',
+    }
+  if (incident.severity === 'sev2')
+    return {
+      icon: <AlertTriangle className="h-3 w-3" />,
+      label: 'Needs attention',
+      className: 'bg-risk-high/15 text-risk-high ring-1 ring-risk-high/30',
+    }
+  if (incident.isRecurring)
+    return {
+      icon: <BookOpen className="h-3 w-3" />,
+      label: 'KB fix available',
+      className: 'bg-status-approved/15 text-status-approved ring-1 ring-status-approved/30',
+    }
+  if (incident.status === 'new')
+    return {
+      icon: <Clock className="h-3 w-3" />,
+      label: 'Triage needed',
+      className: 'bg-status-pending/15 text-status-pending ring-1 ring-status-pending/30',
+    }
+  if (incident.status === 'resolved')
+    return {
+      icon: <CheckCircle2 className="h-3 w-3" />,
+      label: 'Resolved',
+      className: 'bg-secondary text-muted-foreground ring-1 ring-border',
+    }
+  return {
+    icon: <Clock className="h-3 w-3" />,
+    label: 'In progress',
+    className: 'bg-primary/15 text-primary ring-1 ring-primary/30',
+  }
 }
 
 const col = createColumnHelper<Incident>()
@@ -32,24 +93,34 @@ const col = createColumnHelper<Incident>()
 const columns = [
   col.accessor('title', {
     header: 'Incident',
-    size: 320,
-    cell: info => (
-      <Link to={`/incidents/${info.row.original.id}`} className="flex items-center gap-2 group">
-        <AlertTriangle className="w-4 h-4 text-text-muted flex-shrink-0" />
-        <div className="min-w-0 flex-1">
-          <div className="text-sm text-text-primary font-medium group-hover:text-accent transition-colors truncate">{info.getValue()}</div>
-          <div className="text-xs text-text-muted">{info.row.original.incidentId}</div>
-        </div>
-      </Link>
-    ),
+    size: 360,
+    cell: (info) => {
+      const inc = info.row.original
+      return (
+        <Link to={`/incidents/${inc.id}`} className="flex items-center gap-3 group">
+          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-secondary text-muted-foreground flex-shrink-0 group-hover:bg-risk-high/15 group-hover:text-risk-high transition-colors">
+            <AlertTriangle className="h-4 w-4" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="text-sm font-medium text-foreground group-hover:text-primary transition-colors truncate">
+              {info.getValue()}
+            </div>
+            <div className="text-xs text-muted-foreground truncate">{inc.incidentId}</div>
+          </div>
+        </Link>
+      )
+    },
   }),
   col.accessor('affectedService', {
     header: 'Service',
-    cell: info => <SystemChip name={info.getValue()} />,
+    cell: (info) => <SystemChip name={info.getValue()} />,
   }),
   col.accessor('severity', {
     header: 'Severity',
-    cell: info => <RiskBadge level={sevToRisk[info.getValue()]} size="sm" />,
+    cell: (info) => {
+      const b = sevToBadge[info.getValue()]
+      return <Badge variant={b.variant}>{b.label}</Badge>
+    },
     sortingFn: (a, b) => {
       const order = { sev1: 0, sev2: 1, sev3: 2, sev4: 3 }
       return order[a.original.severity] - order[b.original.severity]
@@ -57,54 +128,81 @@ const columns = [
   }),
   col.accessor('status', {
     header: 'Status',
-    cell: info => <span className="text-sm text-text-secondary whitespace-nowrap">{statusLabel[info.getValue()]}</span>,
+    cell: (info) => {
+      const s = info.getValue()
+      const variant =
+        s === 'resolved' ? 'success' : s === 'investigating' ? 'warning' : 'secondary'
+      return <Badge variant={variant}>{statusLabel[s] ?? s}</Badge>
+    },
   }),
   col.display({
     id: 'nextAction',
     header: 'Next Action',
-    cell: info => {
+    cell: (info) => {
       const hint = getNextAction(info.row.original)
-      return <span className={`text-[11px] font-medium px-2 py-0.5 rounded whitespace-nowrap ${hint.color}`}>{hint.label}</span>
+      return (
+        <span
+          className={cn(
+            'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold whitespace-nowrap',
+            hint.className,
+          )}
+        >
+          {hint.icon}
+          {hint.label}
+        </span>
+      )
     },
     enableSorting: false,
   }),
   col.display({
     id: 'supportSignal',
     header: 'Support',
-    cell: info => {
+    cell: (info) => {
       const inc = info.row.original
-      if (inc.isRecurring) return (
-        <span className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded bg-status-approved/10 text-status-approved whitespace-nowrap">
-          <BookOpen className="w-3 h-3" /> KB fix
-        </span>
-      )
-      if (inc.recommendedFix?.toLowerCase().includes('config')) return (
-        <span className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded bg-status-approved/10 text-status-approved whitespace-nowrap">
-          <Wrench className="w-3 h-3" /> Safe fix
-        </span>
-      )
-      if (inc.severity === 'sev1' || inc.severity === 'sev2') return (
-        <span className="inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded bg-status-escalated/10 text-status-escalated whitespace-nowrap">
-          <ArrowRight className="w-3 h-3" /> Escalate
-        </span>
-      )
-      return <span className="text-[10px] text-text-muted whitespace-nowrap">—</span>
+      if (inc.isRecurring)
+        return (
+          <span className="inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-medium bg-status-approved/15 text-status-approved ring-1 ring-status-approved/30 whitespace-nowrap">
+            <BookOpen className="h-3 w-3" /> KB fix
+          </span>
+        )
+      if (inc.recommendedFix?.toLowerCase().includes('config'))
+        return (
+          <span className="inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-medium bg-status-approved/15 text-status-approved ring-1 ring-status-approved/30 whitespace-nowrap">
+            <Wrench className="h-3 w-3" /> Safe fix
+          </span>
+        )
+      if (inc.severity === 'sev1' || inc.severity === 'sev2')
+        return (
+          <span className="inline-flex items-center gap-1.5 rounded-md px-2 py-0.5 text-xs font-medium bg-status-escalated/15 text-status-escalated ring-1 ring-status-escalated/30 whitespace-nowrap">
+            <ArrowUpRight className="h-3 w-3" /> Escalate
+          </span>
+        )
+      return <span className="text-xs text-muted-foreground">—</span>
     },
     enableSorting: false,
   }),
   col.accessor('assignmentGroup', {
     header: 'Assignment',
-    cell: info => <span className="text-sm text-text-secondary whitespace-nowrap">{info.getValue()}</span>,
+    cell: (info) => (
+      <span className="text-sm text-foreground/85 whitespace-nowrap">{info.getValue()}</span>
+    ),
   }),
   col.accessor('updatedAt', {
     header: 'Updated',
-    cell: info => <span className="text-xs text-text-muted whitespace-nowrap">{timeAgo(info.getValue())}</span>,
+    cell: (info) => (
+      <span className="text-xs text-muted-foreground whitespace-nowrap tabular-nums">
+        {timeAgo(info.getValue())}
+      </span>
+    ),
   }),
   col.display({
     id: 'actions',
-    cell: info => (
-      <Link to={`/incidents/${info.row.original.id}`} className="text-accent hover:text-accent-hover">
-        <ArrowRight className="w-4 h-4" />
+    cell: (info) => (
+      <Link
+        to={`/incidents/${info.row.original.id}`}
+        className="flex h-8 w-8 items-center justify-center rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary transition-colors"
+      >
+        <ArrowRight className="h-4 w-4" />
       </Link>
     ),
     enableSorting: false,
@@ -114,19 +212,27 @@ const columns = [
 export default function Incidents() {
   const { data: incidents = [], isLoading } = useIncidents()
 
-  if (isLoading) return <div className="text-text-muted p-8">Loading incidents…</div>
-
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold text-text-primary">Incidents</h1>
-        <p className="text-text-secondary mt-1">ServiceNow incidents and support issues</p>
+    <div>
+      <div style={{ marginBottom: '3rem' }}>
+        <h1 className="text-3xl font-semibold text-foreground tracking-tight">Incidents</h1>
+        <p className="text-base text-muted-foreground mt-2">
+          ServiceNow incidents and support issues
+        </p>
       </div>
-      <DataTable
-        data={incidents}
-        columns={columns}
-        searchPlaceholder="Search incidents by title, service, requester..."
-      />
+
+      {isLoading ? (
+        <div className="space-y-3">
+          <Skeleton className="h-10 w-full max-w-md" />
+          <Skeleton className="h-96 w-full" />
+        </div>
+      ) : (
+        <DataTable
+          data={incidents}
+          columns={columns}
+          searchPlaceholder="Search incidents by title, service, requester..."
+        />
+      )}
     </div>
   )
 }

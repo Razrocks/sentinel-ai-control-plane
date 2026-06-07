@@ -403,9 +403,9 @@ export function ChatPanel() {
 
   return (
     <div className={cn(
-      'fixed bottom-0 right-0 z-30 bg-surface border-t border-border transition-all duration-200',
+      'fixed bottom-0 right-0 z-30 bg-card border-t border-border transition-all duration-200',
       isExpanded ? 'h-[420px]' : 'h-14'
-    )} style={{ left: '13rem' }}>
+    )} style={{ left: '15rem' }}>
       {/* Collapsed bar / Header */}
       <div
         className="flex items-center justify-between h-14 px-4 cursor-pointer select-none"

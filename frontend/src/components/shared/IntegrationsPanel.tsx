@@ -1,19 +1,24 @@
 /**
- * IntegrationsPanel — real integration management UI.
+ * IntegrationsPanel — real integration management UI (Phase 4 rebuild).
  *
- * Renders two sections:
- *   - Connected: rows backed by /api/integrations
- *   - Available: known types whose adapter is registered but not yet
- *     connected; clicking [Connect] opens the wizard.
+ * Connected + Available sections as a grid of Cards. Each connect flow
+ * opens a multi-step Dialog wizard. Built entirely on shadcn primitives:
+ *   - Card / Button / Badge / Input / Label / Checkbox / Dialog / Alert
+ *   - Wizard steps tracked via local state, stepper rendered as bullets
+ *   - All buttons h-10 (size="default") for readability
  *
- * Admin-only. Non-admins see a read-only summary (count by status).
- *
- * Phase 2.5 scope: minimal but functional. Wizard is a single modal — the
- * full multi-step wizard ASCII mockup from earlier ships in Phase 4 when
- * the design system lands.
+ * Admin-only. Non-admin role sees a read-only summary card.
  */
 import { useState } from 'react'
-import { Plug, CheckCircle2, AlertTriangle, XCircle, RefreshCw, Loader2 } from 'lucide-react'
+import {
+  Plug,
+  CheckCircle2,
+  AlertTriangle,
+  XCircle,
+  Loader2,
+  ArrowRight,
+  ArrowLeft,
+} from 'lucide-react'
 import {
   useIntegrations,
   useIntegrationTypes,
@@ -25,6 +30,24 @@ import {
 } from '@/hooks/useSetup'
 import { useRole } from '@/lib/roles'
 import type { IntegrationRow, IntegrationStatus } from '@/lib/api'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Checkbox } from '@/components/ui/checkbox'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Separator } from '@/components/ui/separator'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Skeleton } from '@/components/ui/skeleton'
+import { cn } from '@/lib/utils'
 
 const TYPE_LABELS: Record<string, string> = {
   github: 'GitHub',
@@ -50,85 +73,105 @@ export function IntegrationsPanel() {
   const [connecting, setConnecting] = useState<string | null>(null)
 
   if (!isAdmin) {
-    const counts = integrationsData?.integrations.reduce<Record<string, number>>((acc, i) => {
-      acc[i.status] = (acc[i.status] ?? 0) + 1
-      return acc
-    }, {}) ?? {}
+    const counts =
+      integrationsData?.integrations.reduce<Record<string, number>>((acc, i) => {
+        acc[i.status] = (acc[i.status] ?? 0) + 1
+        return acc
+      }, {}) ?? {}
     return (
-      <div className="rounded-lg border border-border bg-surface p-5">
-        <h2 className="text-sm font-semibold text-text-primary mb-2 flex items-center gap-2">
-          <Plug className="w-4 h-4" /> Integrations
-        </h2>
-        <div className="text-xs text-text-secondary">
-          {counts.connected ?? 0} connected · {counts.degraded ?? 0} degraded · {counts.disconnected ?? 0} disconnected.
-          Contact an admin to manage.
-        </div>
-      </div>
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Plug className="h-4 w-4" /> Integrations
+          </CardTitle>
+          <CardDescription>
+            {counts.connected ?? 0} connected · {counts.degraded ?? 0} degraded ·{' '}
+            {counts.disconnected ?? 0} disconnected. Contact an admin to manage.
+          </CardDescription>
+        </CardHeader>
+      </Card>
     )
   }
 
-  if (isLoading) {
-    return <div className="text-text-muted text-sm">Loading integrations...</div>
-  }
-
   const allRows = integrationsData?.integrations ?? []
-  // Only show in "Connected" section if the integration is actively live.
-  // Disconnected rows fall through to the Available section so the
-  // operator can re-connect with fresh credentials.
   const connected = allRows.filter((i) => i.status !== 'disconnected')
   const connectedTypes = new Set(connected.map((i) => i.type))
-  const availableTypes = (typesData?.types ?? []).filter((t) => !connectedTypes.has(t.type as never))
+  const availableTypes = (typesData?.types ?? []).filter(
+    (t) => !connectedTypes.has(t.type as never),
+  )
 
   return (
-    <div className="rounded-lg border border-border bg-surface p-5 space-y-5">
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-text-primary flex items-center gap-2">
-          <Plug className="w-4 h-4" /> Integrations
-        </h2>
+    <Card>
+      <CardHeader className="flex-row items-center justify-between">
+        <div>
+          <CardTitle className="flex items-center gap-2 text-base">
+            <Plug className="h-4 w-4" /> Integrations
+          </CardTitle>
+          <CardDescription>
+            Connect external systems to Sentinel's workflow. Credentials are encrypted at rest.
+          </CardDescription>
+        </div>
         {typesData && !typesData.encryptionReady && (
-          <div className="flex items-center gap-1.5 text-xs text-status-denied">
-            <AlertTriangle className="w-3.5 h-3.5" />
-            ENCRYPTION_KEY missing — connect blocked
+          <Badge variant="danger" className="gap-1">
+            <AlertTriangle className="h-3 w-3" />
+            ENCRYPTION_KEY missing
+          </Badge>
+        )}
+      </CardHeader>
+      <CardContent className="space-y-6">
+        {isLoading && (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            {[0, 1, 2, 3].map((i) => (
+              <Skeleton key={i} className="h-28" />
+            ))}
           </div>
         )}
-      </div>
 
-      {/* Connected list */}
-      {connected.length > 0 && (
-        <div className="space-y-2">
-          <div className="text-[10px] font-semibold uppercase tracking-wider text-text-muted">
-            Connected ({connected.length})
+        {!isLoading && connected.length > 0 && (
+          <div className="space-y-3">
+            <SectionLabel count={connected.length}>Connected</SectionLabel>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {connected.map((i) => (
+                <ConnectedCard key={i.id} integration={i} />
+              ))}
+            </div>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-            {connected.map((i) => (
-              <ConnectedCard key={i.id} integration={i} />
-            ))}
-          </div>
-        </div>
-      )}
+        )}
 
-      {/* Available list */}
-      {availableTypes.length > 0 && (
-        <div className="space-y-2">
-          <div className="text-[10px] font-semibold uppercase tracking-wider text-text-muted">
-            Available ({availableTypes.length})
+        {!isLoading && availableTypes.length > 0 && (
+          <div className="space-y-3">
+            <SectionLabel count={availableTypes.length}>Available</SectionLabel>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              {availableTypes.map((t) => (
+                <AvailableCard
+                  key={t.type}
+                  type={t.type}
+                  adapterRegistered={t.adapterRegistered}
+                  onConnect={() => setConnecting(t.type)}
+                />
+              ))}
+            </div>
           </div>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-            {availableTypes.map((t) => (
-              <AvailableCard
-                key={t.type}
-                type={t.type}
-                adapterRegistered={t.adapterRegistered}
-                onConnect={() => setConnecting(t.type)}
-              />
-            ))}
+        )}
+
+        {!isLoading && connected.length === 0 && availableTypes.length === 0 && (
+          <div className="text-sm text-muted-foreground text-center py-6">
+            No integration types available.
           </div>
-        </div>
-      )}
+        )}
+      </CardContent>
 
       {connecting && (
-        <ConnectModal type={connecting} onClose={() => setConnecting(null)} />
+        <ConnectWizard type={connecting} onClose={() => setConnecting(null)} />
       )}
+    </Card>
+  )
+}
+
+function SectionLabel({ count, children }: { count: number; children: React.ReactNode }) {
+  return (
+    <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+      {children} <span className="text-muted-foreground/70">({count})</span>
     </div>
   )
 }
@@ -138,53 +181,74 @@ export function IntegrationsPanel() {
 function ConnectedCard({ integration }: { integration: IntegrationRow }) {
   const disconnect = useDisconnectIntegration()
   const [confirming, setConfirming] = useState(false)
+
   const handleDisconnect = async () => {
     await disconnect.mutateAsync(integration.id)
     setConfirming(false)
   }
 
   return (
-    <div className="rounded-md border border-border-subtle bg-surface-raised p-3">
-      <div className="flex items-start justify-between mb-1">
-        <div className="flex items-center gap-2 min-w-0">
-          <StatusDot status={integration.status} />
-          <span className="font-medium text-sm text-text-primary">{TYPE_LABELS[integration.type] ?? integration.type}</span>
-        </div>
-        <span className="text-[10px] uppercase text-text-muted">{integration.status}</span>
-      </div>
-      <div className="text-xs text-text-secondary truncate">{integration.displayName}</div>
-      {integration.lastError && (
-        <div className="text-xs text-status-denied mt-1 truncate" title={integration.lastError}>
-          {integration.lastError}
-        </div>
-      )}
-      <div className="flex justify-end gap-2 mt-3">
-        {confirming ? (
-          <>
-            <button
-              onClick={() => setConfirming(false)}
-              className="text-xs text-text-secondary px-2 py-1 hover:text-text-primary"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={handleDisconnect}
-              disabled={disconnect.isPending}
-              className="text-xs text-status-denied px-2 py-1 hover:bg-status-denied/10 rounded"
-            >
-              {disconnect.isPending ? 'Disconnecting...' : 'Confirm disconnect'}
-            </button>
-          </>
-        ) : (
-          <button
-            onClick={() => setConfirming(true)}
-            className="text-xs text-text-secondary px-2 py-1 hover:bg-surface-overlay rounded"
+    <Card className="bg-secondary/40 border-border">
+      <CardContent className="p-4">
+        <div className="flex items-start justify-between mb-2">
+          <div className="flex items-center gap-2.5 min-w-0">
+            <StatusDot status={integration.status} />
+            <div className="min-w-0">
+              <div className="font-medium text-sm text-foreground">
+                {TYPE_LABELS[integration.type] ?? integration.type}
+              </div>
+              <div className="text-xs text-muted-foreground truncate">
+                {integration.displayName}
+              </div>
+            </div>
+          </div>
+          <Badge
+            variant={
+              integration.status === 'connected'
+                ? 'success'
+                : integration.status === 'degraded'
+                  ? 'warning'
+                  : 'secondary'
+            }
+            className="text-[10px]"
           >
-            Disconnect
-          </button>
+            {integration.status}
+          </Badge>
+        </div>
+
+        {integration.lastError && (
+          <div
+            className="text-xs text-destructive bg-destructive/10 rounded-md px-2.5 py-1.5 truncate mb-3"
+            title={integration.lastError}
+          >
+            {integration.lastError}
+          </div>
         )}
-      </div>
-    </div>
+
+        <div className="flex items-center justify-end gap-2">
+          {confirming ? (
+            <>
+              <span className="text-xs text-muted-foreground mr-auto">Sure?</span>
+              <Button variant="ghost" size="sm" onClick={() => setConfirming(false)}>
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={handleDisconnect}
+                disabled={disconnect.isPending}
+              >
+                {disconnect.isPending ? 'Disconnecting...' : 'Disconnect'}
+              </Button>
+            </>
+          ) : (
+            <Button variant="ghost" size="sm" onClick={() => setConfirming(true)}>
+              Disconnect
+            </Button>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   )
 }
 
@@ -200,47 +264,60 @@ function AvailableCard({
   onConnect: () => void
 }) {
   return (
-    <div className="rounded-md border border-border-subtle bg-surface-raised p-3">
-      <div className="flex items-center gap-2 mb-1">
-        <span className="w-2 h-2 rounded-full bg-text-muted/40" />
-        <span className="font-medium text-sm text-text-primary">{TYPE_LABELS[type] ?? type}</span>
-      </div>
-      <div className="text-xs text-text-secondary mb-3">{TYPE_DESCRIPTIONS[type] ?? '—'}</div>
-      <div className="flex items-center justify-between">
-        <span className="text-[10px] text-text-muted">
-          {adapterRegistered ? 'Adapter ready' : 'Adapter pending (Phase 3)'}
-        </span>
-        <button
-          onClick={onConnect}
-          className="text-xs font-medium text-accent hover:bg-accent/10 px-2 py-1 rounded"
-        >
-          Connect →
-        </button>
-      </div>
-    </div>
+    <Card className="border-dashed">
+      <CardContent className="p-4">
+        <div className="flex items-center gap-2.5 mb-1">
+          <span className="h-2 w-2 rounded-full bg-muted-foreground/40" />
+          <div className="font-medium text-sm text-foreground">
+            {TYPE_LABELS[type] ?? type}
+          </div>
+        </div>
+        <div className="text-xs text-muted-foreground mb-4 ml-5">
+          {TYPE_DESCRIPTIONS[type] ?? '—'}
+        </div>
+        <div className="flex items-center justify-between">
+          <span className="text-[10px] text-muted-foreground">
+            {adapterRegistered ? 'Adapter ready' : 'Adapter pending (Phase 3)'}
+          </span>
+          <Button size="sm" onClick={onConnect} disabled={!adapterRegistered}>
+            Connect
+            <ArrowRight className="h-3.5 w-3.5" />
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   )
 }
 
 function StatusDot({ status }: { status: IntegrationStatus }) {
-  if (status === 'connected') return <CheckCircle2 className="w-3.5 h-3.5 text-status-approved" />
-  if (status === 'degraded') return <AlertTriangle className="w-3.5 h-3.5 text-status-pending" />
-  if (status === 'disconnected') return <XCircle className="w-3.5 h-3.5 text-text-muted" />
-  return <RefreshCw className="w-3.5 h-3.5 text-text-muted" />
+  if (status === 'connected')
+    return <CheckCircle2 className="h-4 w-4 text-status-approved flex-shrink-0" />
+  if (status === 'degraded')
+    return <AlertTriangle className="h-4 w-4 text-status-pending flex-shrink-0" />
+  return <XCircle className="h-4 w-4 text-muted-foreground flex-shrink-0" />
 }
 
-// ─── Connect wizard (3 steps) ───────────────────────────
+// ─── Connect wizard (Dialog-based) ───────────────────────
 
 type WizardStep = 'creds' | 'scopes' | 'webhooks' | 'done'
 
-function ConnectModal({ type, onClose }: { type: string; onClose: () => void }) {
+const STEP_LABELS: Record<WizardStep, string> = {
+  creds: 'Credentials',
+  scopes: 'Select scopes',
+  webhooks: 'Register webhooks',
+  done: 'Done',
+}
+
+function ConnectWizard({ type, onClose }: { type: string; onClose: () => void }) {
   const [step, setStep] = useState<WizardStep>('creds')
   const [credential, setCredential] = useState('')
   const [webhookSecret, setWebhookSecret] = useState('')
-  const [displayName, setDisplayName] = useState(`${TYPE_LABELS[type] ?? type}`)
-  // Providers that ship a separate signing secret (distinct from the API
-  // credential) and need a second input on the credentials step.
-  const needsWebhookSecret = type === 'slack' || type === 'sentry'
-  const [testResult, setTestResult] = useState<{ ok: boolean; identity?: string; errorMessage?: string } | null>(null)
+  const [displayName, setDisplayName] = useState(TYPE_LABELS[type] ?? type)
+  const [testResult, setTestResult] = useState<{
+    ok: boolean
+    identity?: string
+    errorMessage?: string
+  } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [selectedScopes, setSelectedScopes] = useState<Set<string>>(new Set())
   const [publicBaseUrl, setPublicBaseUrl] = useState(() =>
@@ -251,12 +328,13 @@ function ConnectModal({ type, onClose }: { type: string; onClose: () => void }) 
     failures: { scopeId: string; error: string }[]
   } | null>(null)
 
+  const needsWebhookSecret = type === 'slack' || type === 'sentry'
+
   const test = useTestIntegration()
   const connect = useConnectIntegration()
   const scopesQuery = useIntegrationScopes(step === 'scopes' ? type : null)
   const registerWebhook = useRegisterWebhook()
 
-  // ── Step: creds ────────────────────────────────────
   const handleTest = async () => {
     setError(null)
     try {
@@ -284,7 +362,6 @@ function ConnectModal({ type, onClose }: { type: string; onClose: () => void }) 
     }
   }
 
-  // ── Step: scopes ───────────────────────────────────
   const toggleScope = (id: string) => {
     setSelectedScopes((prev) => {
       const next = new Set(prev)
@@ -294,7 +371,6 @@ function ConnectModal({ type, onClose }: { type: string; onClose: () => void }) 
     })
   }
 
-  // ── Step: webhooks ─────────────────────────────────
   const handleRegisterWebhooks = async () => {
     setError(null)
     try {
@@ -311,131 +387,70 @@ function ConnectModal({ type, onClose }: { type: string; onClose: () => void }) 
   }
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center p-4">
-      <div className="w-full max-w-xl rounded-lg border border-border bg-surface shadow-xl">
-        <div className="p-4 border-b border-border flex items-center justify-between">
-          <div>
-            <h3 className="text-sm font-semibold text-text-primary">
-              Connect {TYPE_LABELS[type] ?? type}
-            </h3>
-            <p className="text-xs text-text-muted mt-0.5">
-              Step {step === 'creds' ? 1 : step === 'scopes' ? 2 : step === 'webhooks' ? 3 : 4} of 3
-              · {stepLabel(step)}
-            </p>
-          </div>
-          <button onClick={onClose} className="text-text-muted hover:text-text-primary text-lg">
-            ×
-          </button>
-        </div>
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>Connect {TYPE_LABELS[type] ?? type}</DialogTitle>
+          <DialogDescription>
+            <Stepper current={step} />
+          </DialogDescription>
+        </DialogHeader>
 
-        {/* Step 1: credentials */}
         {step === 'creds' && (
-          <>
-            <div className="p-4 space-y-3">
-              <div>
-                <label className="text-xs text-text-muted">Display name</label>
-                <input
-                  type="text"
-                  value={displayName}
-                  onChange={(e) => setDisplayName(e.target.value)}
-                  className="mt-1 w-full bg-surface-raised border border-border rounded px-3 py-2 text-sm text-text-primary"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-text-muted">
-                  {type === 'github' ? 'Personal Access Token (PAT)' : 'Credential / token'}
-                </label>
-                <input
-                  type="password"
-                  value={credential}
-                  onChange={(e) => setCredential(e.target.value)}
-                  placeholder="paste here · encrypted at rest · never logged"
-                  className="mt-1 w-full bg-surface-raised border border-border rounded px-3 py-2 text-sm text-text-primary font-mono"
-                  autoComplete="off"
-                />
-                {type === 'github' && (
-                  <p className="text-[10px] text-text-muted mt-1">
-                    Required scopes: <code>repo</code>, <code>admin:repo_hook</code>.
-                  </p>
-                )}
-                {type === 'slack' && (
-                  <p className="text-[10px] text-text-muted mt-1">
-                    Bot User OAuth Token from your Slack app (starts with <code>xoxb-</code>).
-                  </p>
-                )}
-                {type === 'sentry' && (
-                  <p className="text-[10px] text-text-muted mt-1">
-                    Internal Integration Auth Token (starts with <code>sntrys_</code>).
-                  </p>
-                )}
-                {type === 'linear' && (
-                  <p className="text-[10px] text-text-muted mt-1">
-                    Personal API key (starts with <code>lin_api_</code>) or OAuth token.
-                  </p>
-                )}
-              </div>
-              {needsWebhookSecret && (
-                <div>
-                  <label className="text-xs text-text-muted">
-                    {type === 'sentry' ? 'Client Secret' : 'Signing secret'}
-                  </label>
-                  <input
-                    type="password"
-                    value={webhookSecret}
-                    onChange={(e) => setWebhookSecret(e.target.value)}
-                    placeholder="encrypted at rest · never logged"
-                    className="mt-1 w-full bg-surface-raised border border-border rounded px-3 py-2 text-sm text-text-primary font-mono"
-                    autoComplete="off"
-                  />
-                  {type === 'slack' && (
-                    <p className="text-[10px] text-text-muted mt-1">
-                      Slack app config → Basic Information → App Credentials → Signing Secret.
-                      Used to verify inbound webhook HMAC.
-                    </p>
-                  )}
-                  {type === 'sentry' && (
-                    <p className="text-[10px] text-text-muted mt-1">
-                      Sentry Internal Integration → Credentials → Client Secret.
-                      Used to verify the Sentry-Hook-Signature on inbound events.
-                    </p>
-                  )}
-                </div>
-              )}
-              {testResult && (
-                <div
-                  className={`text-xs rounded p-2 ${
-                    testResult.ok
-                      ? 'bg-status-approved/10 text-status-approved'
-                      : 'bg-status-denied/10 text-status-denied'
-                  }`}
-                >
-                  {testResult.ok
-                    ? `✓ Authenticated as ${testResult.identity ?? 'unknown'}`
-                    : `✗ ${testResult.errorMessage ?? 'Connection failed'}`}
-                </div>
-              )}
-              {error && (
-                <div className="text-xs text-status-denied bg-status-denied/10 rounded p-2">
-                  {error}
-                </div>
-              )}
-            </div>
-            <div className="p-4 border-t border-border flex justify-between gap-2">
-              <button
-                onClick={onClose}
-                className="text-xs px-3 py-1.5 text-text-secondary hover:text-text-primary rounded"
-              >
-                Cancel
-              </button>
-              <div className="flex gap-2">
-                <button
+          <CredsStep
+            type={type}
+            displayName={displayName}
+            setDisplayName={setDisplayName}
+            credential={credential}
+            setCredential={setCredential}
+            needsWebhookSecret={needsWebhookSecret}
+            webhookSecret={webhookSecret}
+            setWebhookSecret={setWebhookSecret}
+            testResult={testResult}
+            onTest={handleTest}
+            isTesting={test.isPending}
+            error={error}
+          />
+        )}
+
+        {step === 'scopes' && (
+          <ScopesStep
+            scopesQuery={scopesQuery}
+            selectedScopes={selectedScopes}
+            toggleScope={toggleScope}
+            type={type}
+          />
+        )}
+
+        {step === 'webhooks' && (
+          <WebhooksStep
+            type={type}
+            publicBaseUrl={publicBaseUrl}
+            setPublicBaseUrl={setPublicBaseUrl}
+            selectedScopes={selectedScopes}
+            error={error}
+          />
+        )}
+
+        {step === 'done' && webhookResult && <DoneStep type={type} result={webhookResult} />}
+
+        <DialogFooter className="flex sm:justify-between gap-2">
+          {step !== 'done' && (
+            <Button variant="ghost" onClick={onClose}>
+              Cancel
+            </Button>
+          )}
+          <div className="flex gap-2 ml-auto">
+            {step === 'creds' && (
+              <>
+                <Button
+                  variant="outline"
                   onClick={handleTest}
                   disabled={!credential || test.isPending}
-                  className="text-xs px-3 py-1.5 rounded bg-surface-raised border border-border-subtle text-text-secondary disabled:opacity-40"
                 >
-                  {test.isPending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Test'}
-                </button>
-                <button
+                  {test.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Test'}
+                </Button>
+                <Button
                   onClick={handleSaveCreds}
                   disabled={
                     !credential ||
@@ -444,201 +459,416 @@ function ConnectModal({ type, onClose }: { type: string; onClose: () => void }) 
                     !testResult?.ok ||
                     (needsWebhookSecret && !webhookSecret)
                   }
-                  className="text-xs font-medium px-3 py-1.5 rounded bg-accent text-white disabled:opacity-40"
                 >
-                  {connect.isPending ? 'Saving...' : 'Save & continue →'}
-                </button>
-              </div>
-            </div>
-          </>
-        )}
+                  {connect.isPending ? 'Saving...' : 'Save & continue'}
+                  <ArrowRight className="h-4 w-4" />
+                </Button>
+              </>
+            )}
 
-        {/* Step 2: scopes */}
-        {step === 'scopes' && (
-          <>
-            <div className="p-4 space-y-3">
-              <p className="text-xs text-text-secondary">
-                Select the {type === 'github' ? 'repositories' : 'scopes'} Sentinel should watch.
-              </p>
-              {scopesQuery.isLoading && (
-                <div className="flex items-center gap-2 text-xs text-text-muted">
-                  <Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading scopes...
-                </div>
-              )}
-              {scopesQuery.error && (
-                <div className="text-xs text-status-denied bg-status-denied/10 rounded p-2">
-                  {(scopesQuery.error as Error).message}
-                </div>
-              )}
-              {scopesQuery.data && (
-                <div className="max-h-64 overflow-y-auto border border-border-subtle rounded">
-                  {scopesQuery.data.scopes.length === 0 ? (
-                    <div className="p-3 text-xs text-text-muted">No scopes available.</div>
-                  ) : (
-                    scopesQuery.data.scopes.map((s) => (
-                      <label
-                        key={s.id}
-                        className="flex items-center gap-2 px-3 py-2 text-sm hover:bg-surface-raised cursor-pointer border-b border-border-subtle last:border-b-0"
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selectedScopes.has(s.id)}
-                          onChange={() => toggleScope(s.id)}
-                          className="accent-accent"
-                        />
-                        <span className="text-text-primary truncate">{s.label}</span>
-                      </label>
-                    ))
-                  )}
-                </div>
-              )}
-              <p className="text-[10px] text-text-muted">
-                {selectedScopes.size} selected
-              </p>
-            </div>
-            <div className="p-4 border-t border-border flex justify-between gap-2">
-              <button
-                onClick={() => setStep('creds')}
-                className="text-xs px-3 py-1.5 text-text-secondary hover:text-text-primary rounded"
-              >
-                ← Back
-              </button>
-              <button
-                onClick={() => setStep('webhooks')}
-                disabled={selectedScopes.size === 0}
-                className="text-xs font-medium px-3 py-1.5 rounded bg-accent text-white disabled:opacity-40"
-              >
-                Continue →
-              </button>
-            </div>
-          </>
-        )}
+            {step === 'scopes' && (
+              <>
+                <Button variant="ghost" onClick={() => setStep('creds')}>
+                  <ArrowLeft className="h-4 w-4" /> Back
+                </Button>
+                <Button
+                  onClick={() => setStep('webhooks')}
+                  disabled={selectedScopes.size === 0}
+                >
+                  Continue
+                  <ArrowRight className="h-4 w-4" />
+                </Button>
+              </>
+            )}
 
-        {/* Step 3: webhooks */}
-        {step === 'webhooks' && (
-          <>
-            <div className="p-4 space-y-3">
-              <p className="text-xs text-text-secondary">
-                {type === 'slack'
-                  ? 'Slack does not support API-side webhook registration. Paste the delivery URL below into your Slack app config — Sentinel just records the channels you picked.'
-                  : type === 'sentry'
-                    ? 'Sentry Internal Integrations are configured manually. Paste the delivery URL into your Sentry integration\'s Webhook URL field — Sentinel just records the projects you picked.'
-                    : 'Sentinel will register a webhook on each selected scope pointing to its public URL.'}
-              </p>
-              <div>
-                <label className="text-xs text-text-muted">Public base URL (Sentinel backend)</label>
-                <input
-                  type="text"
-                  value={publicBaseUrl}
-                  onChange={(e) => setPublicBaseUrl(e.target.value)}
-                  className="mt-1 w-full bg-surface-raised border border-border rounded px-3 py-2 text-sm text-text-primary font-mono"
-                />
-                <p className="text-[10px] text-text-muted mt-1">
-                  Webhook delivery URL: <code>{publicBaseUrl}/api/webhooks/{type}</code>
-                </p>
-                {type === 'slack' && (
-                  <p className="text-[10px] text-text-muted">
-                    Slack app config → <strong>Event Subscriptions</strong> → enable → paste the
-                    delivery URL → subscribe to bot events: <code>app_mention</code>.
-                    Slack must be able to reach this URL — local dev needs a tunnel
-                    (cloudflared, ngrok).
-                  </p>
-                )}
-                {type === 'sentry' && (
-                  <p className="text-[10px] text-text-muted">
-                    Sentry Internal Integration config → <strong>Webhook URL</strong> field →
-                    paste the delivery URL. Enable resources: <code>Issue</code>. Sentry must be
-                    able to reach this URL.
-                  </p>
-                )}
-                {type !== 'slack' && type !== 'sentry' && (
-                  <p className="text-[10px] text-text-muted">
-                    Provider must be able to reach this URL. For local dev use a tunnel (ngrok,
-                    cloudflared) and paste its HTTPS URL here.
-                  </p>
-                )}
-              </div>
-              <div className="text-xs text-text-secondary">
-                Will register webhooks on {selectedScopes.size}{' '}
-                {selectedScopes.size === 1 ? 'scope' : 'scopes'}:
-                <ul className="list-disc pl-5 mt-1 text-text-muted">
-                  {Array.from(selectedScopes).slice(0, 5).map((s) => (
-                    <li key={s}>{s}</li>
-                  ))}
-                  {selectedScopes.size > 5 && <li>… and {selectedScopes.size - 5} more</li>}
-                </ul>
-              </div>
-              {error && (
-                <div className="text-xs text-status-denied bg-status-denied/10 rounded p-2">
-                  {error}
-                </div>
-              )}
-            </div>
-            <div className="p-4 border-t border-border flex justify-between gap-2">
-              <button
-                onClick={() => setStep('scopes')}
-                className="text-xs px-3 py-1.5 text-text-secondary hover:text-text-primary rounded"
-              >
-                ← Back
-              </button>
-              <button
-                onClick={handleRegisterWebhooks}
-                disabled={registerWebhook.isPending || !publicBaseUrl}
-                className="text-xs font-medium px-3 py-1.5 rounded bg-accent text-white disabled:opacity-40"
-              >
-                {registerWebhook.isPending ? 'Registering...' : 'Register webhooks'}
-              </button>
-            </div>
-          </>
-        )}
+            {step === 'webhooks' && (
+              <>
+                <Button variant="ghost" onClick={() => setStep('scopes')}>
+                  <ArrowLeft className="h-4 w-4" /> Back
+                </Button>
+                <Button
+                  onClick={handleRegisterWebhooks}
+                  disabled={registerWebhook.isPending || !publicBaseUrl}
+                >
+                  {registerWebhook.isPending ? 'Registering...' : 'Register webhooks'}
+                </Button>
+              </>
+            )}
 
-        {/* Step 4: done */}
-        {step === 'done' && (
-          <>
-            <div className="p-4 space-y-3">
-              <div className="flex items-center gap-2 text-status-approved">
-                <CheckCircle2 className="w-5 h-5" />
-                <span className="text-sm font-medium">
-                  {webhookResult?.registered ?? 0} webhook{webhookResult?.registered === 1 ? '' : 's'} registered
-                </span>
-              </div>
-              {webhookResult && webhookResult.failures.length > 0 && (
-                <div className="text-xs">
-                  <p className="text-status-pending mb-1">
-                    {webhookResult.failures.length} failed:
-                  </p>
-                  <ul className="list-disc pl-5 text-text-muted space-y-1">
-                    {webhookResult.failures.map((f) => (
-                      <li key={f.scopeId}>
-                        <code>{f.scopeId}</code> — {f.error}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
-              <p className="text-xs text-text-muted">
-                {TYPE_LABELS[type] ?? type} is now connected. Trigger a test event from the provider
-                to confirm end-to-end delivery.
-              </p>
-            </div>
-            <div className="p-4 border-t border-border flex justify-end">
-              <button
-                onClick={onClose}
-                className="text-xs font-medium px-3 py-1.5 rounded bg-accent text-white"
-              >
-                Finish
-              </button>
-            </div>
-          </>
+            {step === 'done' && <Button onClick={onClose}>Finish</Button>}
+          </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// ─── Stepper ─────────────────────────────────────────────
+
+function Stepper({ current }: { current: WizardStep }) {
+  const order: WizardStep[] = ['creds', 'scopes', 'webhooks']
+  const currentIdx = current === 'done' ? order.length : order.indexOf(current)
+  return (
+    <div className="flex items-center gap-2 mt-1">
+      {order.map((s, idx) => (
+        <div key={s} className="flex items-center gap-2">
+          <div
+            className={cn(
+              'flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-semibold',
+              idx <= currentIdx
+                ? 'bg-primary text-primary-foreground'
+                : 'bg-secondary text-muted-foreground',
+            )}
+          >
+            {idx + 1}
+          </div>
+          <span
+            className={cn(
+              'text-xs',
+              idx === currentIdx ? 'text-foreground font-medium' : 'text-muted-foreground',
+            )}
+          >
+            {STEP_LABELS[s]}
+          </span>
+          {idx < order.length - 1 && <span className="text-muted-foreground/40">·</span>}
+        </div>
+      ))}
+    </div>
+  )
+}
+
+// ─── Step: credentials ──────────────────────────────────
+
+function CredsStep({
+  type,
+  displayName,
+  setDisplayName,
+  credential,
+  setCredential,
+  needsWebhookSecret,
+  webhookSecret,
+  setWebhookSecret,
+  testResult,
+  onTest,
+  isTesting,
+  error,
+}: {
+  type: string
+  displayName: string
+  setDisplayName: (v: string) => void
+  credential: string
+  setCredential: (v: string) => void
+  needsWebhookSecret: boolean
+  webhookSecret: string
+  setWebhookSecret: (v: string) => void
+  testResult: { ok: boolean; identity?: string; errorMessage?: string } | null
+  onTest: () => void
+  isTesting: boolean
+  error: string | null
+}) {
+  return (
+    <div className="space-y-4">
+      <div className="space-y-1.5">
+        <Label htmlFor="display-name">Display name</Label>
+        <Input
+          id="display-name"
+          value={displayName}
+          onChange={(e) => setDisplayName(e.target.value)}
+        />
+      </div>
+
+      <div className="space-y-1.5">
+        <Label htmlFor="credential">
+          {type === 'github' && 'Personal Access Token (PAT)'}
+          {type === 'slack' && 'Bot User OAuth Token'}
+          {type === 'linear' && 'API key'}
+          {type === 'sentry' && 'Internal Integration Auth Token'}
+          {!['github', 'slack', 'linear', 'sentry'].includes(type) && 'Credential / token'}
+        </Label>
+        <Input
+          id="credential"
+          type="password"
+          value={credential}
+          onChange={(e) => setCredential(e.target.value)}
+          placeholder="paste here · encrypted at rest · never logged"
+          className="font-mono"
+          autoComplete="off"
+        />
+        {type === 'github' && (
+          <p className="text-xs text-muted-foreground">
+            Required scopes: <code>repo</code>, <code>admin:repo_hook</code>.
+          </p>
         )}
+        {type === 'slack' && (
+          <p className="text-xs text-muted-foreground">
+            From your Slack app → OAuth & Permissions (starts with <code>xoxb-</code>).
+          </p>
+        )}
+        {type === 'sentry' && (
+          <p className="text-xs text-muted-foreground">
+            From your Internal Integration (starts with <code>sntrys_</code>).
+          </p>
+        )}
+        {type === 'linear' && (
+          <p className="text-xs text-muted-foreground">
+            Personal API key (starts with <code>lin_api_</code>) or OAuth token.
+          </p>
+        )}
+      </div>
+
+      {needsWebhookSecret && (
+        <div className="space-y-1.5">
+          <Label htmlFor="webhook-secret">
+            {type === 'sentry' ? 'Client Secret' : 'Signing secret'}
+          </Label>
+          <Input
+            id="webhook-secret"
+            type="password"
+            value={webhookSecret}
+            onChange={(e) => setWebhookSecret(e.target.value)}
+            placeholder="encrypted at rest · never logged"
+            className="font-mono"
+            autoComplete="off"
+          />
+          {type === 'slack' && (
+            <p className="text-xs text-muted-foreground">
+              Slack app config → Basic Information → App Credentials → Signing Secret. Used to verify
+              inbound webhook HMAC.
+            </p>
+          )}
+          {type === 'sentry' && (
+            <p className="text-xs text-muted-foreground">
+              Sentry Internal Integration → Credentials → Client Secret. Used to verify the
+              Sentry-Hook-Signature on inbound events.
+            </p>
+          )}
+        </div>
+      )}
+
+      {testResult && (
+        <Alert variant={testResult.ok ? 'success' : 'destructive'}>
+          {testResult.ok ? (
+            <CheckCircle2 className="h-4 w-4" />
+          ) : (
+            <XCircle className="h-4 w-4" />
+          )}
+          <AlertDescription>
+            {testResult.ok
+              ? `Authenticated as ${testResult.identity ?? 'unknown'}`
+              : (testResult.errorMessage ?? 'Connection failed')}
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {error && (
+        <Alert variant="destructive">
+          <XCircle className="h-4 w-4" />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
+      <div className="flex justify-end">
+        <Button variant="outline" size="sm" onClick={onTest} disabled={!credential || isTesting}>
+          {isTesting ? (
+            <>
+              <Loader2 className="h-3.5 w-3.5 animate-spin" /> Testing...
+            </>
+          ) : (
+            'Test connection'
+          )}
+        </Button>
       </div>
     </div>
   )
 }
 
-function stepLabel(step: WizardStep): string {
-  if (step === 'creds') return 'Credentials'
-  if (step === 'scopes') return 'Select scopes'
-  if (step === 'webhooks') return 'Register webhooks'
-  return 'Done'
+// ─── Step: scopes ───────────────────────────────────────
+
+function ScopesStep({
+  scopesQuery,
+  selectedScopes,
+  toggleScope,
+  type,
+}: {
+  scopesQuery: ReturnType<typeof useIntegrationScopes>
+  selectedScopes: Set<string>
+  toggleScope: (id: string) => void
+  type: string
+}) {
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-muted-foreground">
+        Select the {type === 'github' ? 'repositories' : type === 'slack' ? 'channels' : 'scopes'}{' '}
+        Sentinel should watch.
+      </p>
+
+      {scopesQuery.isLoading && (
+        <div className="space-y-2">
+          {[0, 1, 2].map((i) => (
+            <Skeleton key={i} className="h-10" />
+          ))}
+        </div>
+      )}
+
+      {scopesQuery.error && (
+        <Alert variant="destructive">
+          <XCircle className="h-4 w-4" />
+          <AlertDescription>{(scopesQuery.error as Error).message}</AlertDescription>
+        </Alert>
+      )}
+
+      {scopesQuery.data && (
+        <div className="max-h-72 overflow-y-auto rounded-md border border-border divide-y divide-border bg-secondary/30">
+          {scopesQuery.data.scopes.length === 0 ? (
+            <div className="p-4 text-sm text-muted-foreground text-center">No scopes available.</div>
+          ) : (
+            scopesQuery.data.scopes.map((s) => (
+              <label
+                key={s.id}
+                className="flex items-center gap-3 px-4 py-3 cursor-pointer hover:bg-secondary/60 transition-colors"
+              >
+                <Checkbox
+                  checked={selectedScopes.has(s.id)}
+                  onCheckedChange={() => toggleScope(s.id)}
+                />
+                <span className="text-sm text-foreground truncate">{s.label}</span>
+              </label>
+            ))
+          )}
+        </div>
+      )}
+
+      <p className="text-xs text-muted-foreground">
+        {selectedScopes.size} selected
+      </p>
+    </div>
+  )
+}
+
+// ─── Step: webhooks ─────────────────────────────────────
+
+function WebhooksStep({
+  type,
+  publicBaseUrl,
+  setPublicBaseUrl,
+  selectedScopes,
+  error,
+}: {
+  type: string
+  publicBaseUrl: string
+  setPublicBaseUrl: (v: string) => void
+  selectedScopes: Set<string>
+  error: string | null
+}) {
+  return (
+    <div className="space-y-4">
+      <p className="text-sm text-muted-foreground">
+        {type === 'slack' &&
+          'Slack does not support API-side webhook registration. Paste the delivery URL below into your Slack app config — Sentinel just records the channels you picked.'}
+        {type === 'sentry' &&
+          "Sentry Internal Integrations are configured manually. Paste the delivery URL into your Sentry integration's Webhook URL field — Sentinel just records the projects you picked."}
+        {!['slack', 'sentry'].includes(type) &&
+          'Sentinel will register a webhook on each selected scope pointing to its public URL.'}
+      </p>
+
+      <div className="space-y-1.5">
+        <Label htmlFor="public-url">Public base URL (Sentinel backend)</Label>
+        <Input
+          id="public-url"
+          value={publicBaseUrl}
+          onChange={(e) => setPublicBaseUrl(e.target.value)}
+          className="font-mono text-xs"
+        />
+        <p className="text-xs text-muted-foreground">
+          Webhook delivery URL:{' '}
+          <code className="text-foreground">
+            {publicBaseUrl}/api/webhooks/{type}
+          </code>
+        </p>
+        {type === 'slack' && (
+          <p className="text-xs text-muted-foreground">
+            Slack app config → <strong>Event Subscriptions</strong> → enable → paste delivery URL →
+            subscribe to bot events: <code>app_mention</code>. Tunnel needed for local dev
+            (cloudflared, ngrok).
+          </p>
+        )}
+        {type === 'sentry' && (
+          <p className="text-xs text-muted-foreground">
+            Sentry Internal Integration config → <strong>Webhook URL</strong> → paste delivery URL.
+            Enable resource: <code>Issue</code>.
+          </p>
+        )}
+        {!['slack', 'sentry'].includes(type) && (
+          <p className="text-xs text-muted-foreground">
+            Provider must reach this URL. Local dev needs a tunnel (ngrok, cloudflared).
+          </p>
+        )}
+      </div>
+
+      <Separator />
+
+      <div className="text-sm text-foreground">
+        Registering on {selectedScopes.size}{' '}
+        {selectedScopes.size === 1 ? 'scope' : 'scopes'}:
+      </div>
+      <ul className="text-xs text-muted-foreground space-y-0.5 list-disc pl-5">
+        {Array.from(selectedScopes)
+          .slice(0, 5)
+          .map((s) => (
+            <li key={s}>
+              <code className="text-foreground">{s}</code>
+            </li>
+          ))}
+        {selectedScopes.size > 5 && <li>… and {selectedScopes.size - 5} more</li>}
+      </ul>
+
+      {error && (
+        <Alert variant="destructive">
+          <XCircle className="h-4 w-4" />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+    </div>
+  )
+}
+
+// ─── Step: done ─────────────────────────────────────────
+
+function DoneStep({
+  type,
+  result,
+}: {
+  type: string
+  result: { registered: number; failures: { scopeId: string; error: string }[] }
+}) {
+  return (
+    <div className="space-y-4">
+      <Alert variant="success">
+        <CheckCircle2 className="h-4 w-4" />
+        <AlertTitle>
+          {result.registered} webhook{result.registered === 1 ? '' : 's'} registered
+        </AlertTitle>
+        <AlertDescription>
+          {TYPE_LABELS[type] ?? type} is now connected. Trigger a test event from the provider to
+          confirm end-to-end delivery.
+        </AlertDescription>
+      </Alert>
+
+      {result.failures.length > 0 && (
+        <Alert variant="warning">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>{result.failures.length} failed</AlertTitle>
+          <AlertDescription>
+            <ul className="list-disc pl-5 space-y-1 mt-2">
+              {result.failures.map((f) => (
+                <li key={f.scopeId} className="text-xs">
+                  <code className="text-foreground">{f.scopeId}</code> — {f.error}
+                </li>
+              ))}
+            </ul>
+          </AlertDescription>
+        </Alert>
+      )}
+    </div>
+  )
 }

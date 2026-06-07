@@ -30,17 +30,17 @@ import { useRole } from '@/lib/roles'
 
 function StatCard({ label, value, icon: Icon, color, to }: { label: string; value: number; icon: React.ElementType; color: string; to?: string }) {
   const content = (
-    <div className="bg-surface rounded-lg border border-border p-4 flex items-center gap-4 hover:border-accent/30 transition-colors">
-      <div className={`p-2.5 rounded-lg ${color}`}>
+    <div className="bg-card rounded-lg border border-border p-5 flex items-center gap-4 hover:border-primary/40 hover:bg-card/80 transition-all">
+      <div className={`p-3 rounded-lg ${color}`}>
         <Icon className="w-5 h-5" />
       </div>
-      <div>
-        <div className="text-2xl font-semibold text-text-primary">{value}</div>
-        <div className="text-sm text-text-secondary">{label}</div>
+      <div className="min-w-0">
+        <div className="text-3xl font-semibold text-foreground leading-none tracking-tight">{value}</div>
+        <div className="text-sm text-muted-foreground mt-1.5">{label}</div>
       </div>
     </div>
   )
-  return to ? <Link to={to}>{content}</Link> : content
+  return to ? <Link to={to} className="block">{content}</Link> : content
 }
 
 // Compute next step hint for a change

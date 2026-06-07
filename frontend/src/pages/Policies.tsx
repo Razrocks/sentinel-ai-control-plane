@@ -1,19 +1,41 @@
+/**
+ * Policies — active guardrails and policy-rule library.
+ *
+ * Phase 4 rebuild: shadcn Cards for layout, ring-bordered decision
+ * chips, larger typography. Left list + right detail pane preserved.
+ */
 import { useState } from 'react'
-import { Shield, ChevronRight, CheckCircle, XCircle, AlertTriangle, Clock, Zap, FileText, ArrowUpRight } from 'lucide-react'
+import {
+  Shield,
+  ChevronRight,
+  CheckCircle2,
+  XCircle,
+  AlertTriangle,
+  Clock,
+  Zap,
+  FileText,
+  ArrowUpRight,
+} from 'lucide-react'
 import { usePolicies, useAuditEvents } from '@/hooks/useData'
-import { PolicyBadge } from '@/components/shared'
-import { timeAgo } from '@/lib/utils'
+import { timeAgo, cn } from '@/lib/utils'
 import { useRole } from '@/lib/roles'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Separator } from '@/components/ui/separator'
+import { Skeleton } from '@/components/ui/skeleton'
 
-// Enriched policy metadata — trigger conditions, affected actions, example outcomes, owner, last modified
-const policyMeta: Record<string, {
-  triggerConditions: string[]
-  affectedActions: string[]
-  exampleOutcome: string
-  owner: string
-  lastModified: string
-  workflowStage: string
-}> = {
+// Enriched policy metadata (mock).
+const policyMeta: Record<
+  string,
+  {
+    triggerConditions: string[]
+    affectedActions: string[]
+    exampleOutcome: string
+    owner: string
+    lastModified: string
+    workflowStage: string
+  }
+> = {
   'pol-001': {
     triggerConditions: ['Risk score = LOW', 'CI status = passing', 'Rollback plan exists'],
     affectedActions: ['Auto-approve change', 'Skip manual review'],
@@ -80,222 +102,334 @@ const policyMeta: Record<string, {
   },
 }
 
+function decisionBadge(decision: string) {
+  if (decision === 'deny') return { variant: 'danger' as const, label: 'Deny' }
+  if (decision === 'escalate') return { variant: 'warning' as const, label: 'Escalate' }
+  if (decision === 'simulate_only') return { variant: 'secondary' as const, label: 'Simulate' }
+  return { variant: 'success' as const, label: 'Allow' }
+}
+
 export default function Policies() {
   const [selectedRule, setSelectedRule] = useState<string | null>(null)
-  const { role } = useRole()
+  const { role: _role } = useRole()
   const { data: policyRules = [], isLoading: loadingPolicies } = usePolicies()
-  const { data: auditEvents = [], isLoading: loadingAudit } = useAuditEvents()
-  const activeRules = policyRules.filter(r => r.isActive)
-  const isAdmin = role === 'admin'
+  const { data: auditEvents = [] } = useAuditEvents()
+  const activeRules = policyRules.filter((r) => r.isActive)
 
-  if (loadingPolicies) {
-    return <div className="text-text-secondary p-8 text-center">Loading policies...</div>
-  }
-
-  const selected = policyRules.find(r => r.id === selectedRule)
+  const selected = policyRules.find((r) => r.id === selectedRule)
   const meta = selected ? policyMeta[selected.id] : null
-
-  // Find audit events linked to this policy
   const linkedEvents = selected
-    ? auditEvents.filter(e => e.policyRule === selected.name).slice(0, 3)
+    ? auditEvents.filter((e) => e.policyRule === selected.name).slice(0, 3)
     : []
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-10">
       <div>
-        <h1 className="text-2xl font-semibold text-text-primary">Policies</h1>
-        <p className="text-text-secondary mt-1">Active guardrails and policy rules</p>
+        <h1 className="text-3xl font-semibold text-foreground tracking-tight">Policies</h1>
+        <p className="text-base text-muted-foreground mt-2">
+          Active guardrails and policy rules
+        </p>
       </div>
 
-      {/* Summary cards */}
-      <div className="grid grid-cols-4 gap-4">
-        <div className="bg-surface rounded-lg border border-border p-4">
-          <div className="text-2xl font-semibold text-text-primary">{activeRules.length}</div>
-          <div className="text-sm text-text-secondary">Active Rules</div>
-        </div>
-        <div className="bg-surface rounded-lg border border-border p-4">
-          <div className="text-2xl font-semibold text-risk-critical">{policyRules.filter(r => r.decision === 'deny').length}</div>
-          <div className="text-sm text-text-secondary">Hard Blocks</div>
-        </div>
-        <div className="bg-surface rounded-lg border border-border p-4">
-          <div className="text-2xl font-semibold text-status-escalated">{policyRules.filter(r => r.decision === 'escalate').length}</div>
-          <div className="text-sm text-text-secondary">Escalation Rules</div>
-        </div>
-        <div className="bg-surface rounded-lg border border-border p-4">
-          <div className="text-2xl font-semibold text-status-simulated">{policyRules.filter(r => r.decision === 'simulate_only').length}</div>
-          <div className="text-sm text-text-secondary">Simulate Only</div>
-        </div>
+      {/* Summary tiles */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <StatTile label="Active Rules" value={activeRules.length} color="text-foreground" />
+        <StatTile
+          label="Hard Blocks"
+          value={policyRules.filter((r) => r.decision === 'deny').length}
+          color="text-risk-critical"
+        />
+        <StatTile
+          label="Escalation Rules"
+          value={policyRules.filter((r) => r.decision === 'escalate').length}
+          color="text-status-escalated"
+        />
+        <StatTile
+          label="Simulate Only"
+          value={policyRules.filter((r) => r.decision === 'simulate_only').length}
+          color="text-status-simulated"
+        />
       </div>
 
-      <div className="grid grid-cols-[1fr_420px] gap-5">
-        {/* Rules list */}
-        <div>
-          <div className="bg-surface rounded-lg border border-border overflow-hidden">
-            <div className="px-4 py-3 border-b border-border">
-              <h2 className="text-sm font-medium text-text-primary">Policy Rules</h2>
-            </div>
-            <div className="divide-y divide-border">
-              {policyRules.map(rule => (
-                <button
-                  key={rule.id}
-                  onClick={() => setSelectedRule(rule.id)}
-                  className={`w-full flex items-center justify-between px-4 py-3 text-left hover:bg-surface-raised transition-colors ${selectedRule === rule.id ? 'bg-surface-raised' : ''}`}
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <Shield className={`w-4 h-4 flex-shrink-0 ${rule.isActive ? 'text-accent' : 'text-text-muted'}`} />
-                    <div className="min-w-0">
-                      <div className="text-sm text-text-primary font-medium">{rule.name}</div>
-                      <div className="text-xs text-text-muted">{rule.bundle} · {rule.scope}</div>
+      {loadingPolicies ? (
+        <Skeleton className="h-96 w-full" />
+      ) : (
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_460px] gap-6">
+          {/* Rules list */}
+          <Card>
+            <CardHeader className="py-4 border-b border-border">
+              <CardTitle className="text-base">Policy Rules</CardTitle>
+            </CardHeader>
+            <CardContent className="p-0 divide-y divide-border">
+              {policyRules.map((rule) => {
+                const b = decisionBadge(rule.decision)
+                const isSelected = selectedRule === rule.id
+                return (
+                  <button
+                    key={rule.id}
+                    onClick={() => setSelectedRule(rule.id)}
+                    className={cn(
+                      'w-full flex items-center justify-between px-5 py-4 text-left transition-colors',
+                      isSelected
+                        ? 'bg-secondary'
+                        : 'hover:bg-secondary/50',
+                    )}
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div
+                        className={cn(
+                          'flex h-9 w-9 items-center justify-center rounded-md flex-shrink-0',
+                          rule.isActive
+                            ? 'bg-primary/15 text-primary'
+                            : 'bg-secondary text-muted-foreground',
+                        )}
+                      >
+                        <Shield className="h-4 w-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="text-sm font-medium text-foreground font-mono">
+                          {rule.name}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {rule.bundle} · {rule.scope}
+                        </div>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge variant={b.variant}>{b.label}</Badge>
+                      <ChevronRight className="h-4 w-4 text-muted-foreground" />
+                    </div>
+                  </button>
+                )
+              })}
+            </CardContent>
+          </Card>
+
+          {/* Detail panel */}
+          <div>
+            {selected ? (
+              <Card className="sticky top-24">
+                <CardContent className="p-6 space-y-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <h3 className="text-base font-mono font-semibold text-foreground">
+                      {selected.name}
+                    </h3>
+                    <span
+                      className={cn(
+                        'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold ring-1',
+                        selected.isActive
+                          ? 'bg-status-approved/15 text-status-approved ring-status-approved/30'
+                          : 'bg-secondary text-muted-foreground ring-border',
+                      )}
+                    >
+                      {selected.isActive ? (
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                      ) : (
+                        <XCircle className="h-3.5 w-3.5" />
+                      )}
+                      {selected.isActive ? 'Active' : 'Inactive'}
+                    </span>
+                  </div>
+
+                  <p className="text-sm text-foreground/85 leading-relaxed">
+                    {selected.description}
+                  </p>
+
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <Field label="Decision">
+                      {(() => {
+                        const b = decisionBadge(selected.decision)
+                        return <Badge variant={b.variant}>{b.label}</Badge>
+                      })()}
+                    </Field>
+                    <Field label="Bundle">
+                      <span className="text-foreground">{selected.bundle}</span>
+                    </Field>
+                    <Field label="Scope">
+                      <span className="text-foreground">{selected.scope}</span>
+                    </Field>
+                    <Field label="Applies To">
+                      <div className="flex flex-wrap gap-1">
+                        {selected.appliesTo.map((s) => (
+                          <code
+                            key={s}
+                            className="text-xs bg-secondary px-2 py-0.5 rounded text-foreground"
+                          >
+                            {s}
+                          </code>
+                        ))}
+                      </div>
+                    </Field>
+                  </div>
+
+                  {meta && (
+                    <>
+                      <Separator />
+                      <SectionList
+                        icon={<Zap className="h-3.5 w-3.5" />}
+                        label="Trigger Conditions"
+                        items={meta.triggerConditions}
+                        dotColor="bg-primary"
+                      />
+                      <SectionList
+                        icon={<AlertTriangle className="h-3.5 w-3.5" />}
+                        label="Affected Actions"
+                        items={meta.affectedActions}
+                        dotColor={
+                          selected.decision === 'deny'
+                            ? 'bg-risk-critical'
+                            : selected.decision === 'escalate'
+                              ? 'bg-status-escalated'
+                              : 'bg-status-approved'
+                        }
+                      />
+
+                      <div className="rounded-md bg-secondary p-3 space-y-1">
+                        <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                          <FileText className="h-3 w-3" /> Example Outcome
+                        </div>
+                        <p className="text-sm text-foreground/85 leading-relaxed">
+                          {meta.exampleOutcome}
+                        </p>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4 text-sm">
+                        <Field label="Owner">
+                          <span className="text-foreground">{meta.owner}</span>
+                        </Field>
+                        <Field label="Last Modified">
+                          <span className="text-muted-foreground">{timeAgo(meta.lastModified)}</span>
+                        </Field>
+                      </div>
+
+                      <div className="rounded-md border border-primary/30 bg-primary/10 p-3 space-y-1">
+                        <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-primary">
+                          <ArrowUpRight className="h-3 w-3" /> Workflow Stage
+                        </div>
+                        <p className="text-sm text-primary">{meta.workflowStage}</p>
+                      </div>
+                    </>
+                  )}
+
+                  {linkedEvents.length > 0 && (
+                    <>
+                      <Separator />
+                      <div>
+                        <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+                          <Clock className="h-3 w-3" /> Recent Activity ({linkedEvents.length})
+                        </div>
+                        <div className="space-y-2">
+                          {linkedEvents.map((event) => {
+                            const v =
+                              event.result === 'blocked' || event.result === 'denied'
+                                ? 'danger'
+                                : event.result === 'escalated'
+                                  ? 'warning'
+                                  : 'success'
+                            return (
+                              <div
+                                key={event.id}
+                                className="flex items-center gap-2 text-sm"
+                              >
+                                <Badge variant={v as 'danger' | 'warning' | 'success'}>
+                                  {event.result}
+                                </Badge>
+                                <span className="text-foreground truncate">
+                                  {event.objectTitle}
+                                </span>
+                                <span className="text-muted-foreground text-xs ml-auto flex-shrink-0">
+                                  {timeAgo(event.timestamp)}
+                                </span>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      </div>
+                    </>
+                  )}
+
+                  <div className="rounded-md bg-secondary p-3">
+                    <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-1">
+                      What this means
+                    </div>
+                    <div className="text-sm text-foreground/85 leading-relaxed">
+                      {selected.decision === 'deny' &&
+                        'This action is hard-blocked. It cannot be executed under any circumstances without policy change.'}
+                      {selected.decision === 'escalate' &&
+                        'This action requires human escalation and approval before it can proceed.'}
+                      {selected.decision === 'simulate_only' &&
+                        'This action can only be simulated. Production execution is not permitted.'}
+                      {selected.decision === 'allow' &&
+                        'This action is permitted under the current policy when all other conditions are met.'}
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <PolicyBadge decision={rule.decision} />
-                    <ChevronRight className="w-4 h-4 text-text-muted" />
+                </CardContent>
+              </Card>
+            ) : (
+              <Card>
+                <CardContent className="flex flex-col items-center justify-center py-16">
+                  <div className="rounded-full bg-secondary p-4 mb-4">
+                    <Shield className="h-7 w-7 text-muted-foreground" />
                   </div>
-                </button>
-              ))}
-            </div>
+                  <p className="text-sm text-muted-foreground">
+                    Select a policy rule to view details
+                  </p>
+                </CardContent>
+              </Card>
+            )}
           </div>
         </div>
+      )}
+    </div>
+  )
+}
 
-        {/* Rule detail */}
-        <div>
-          {selected ? (
-            <div className="bg-surface rounded-lg border border-border p-4 space-y-4 sticky top-20">
-              <div className="flex items-center justify-between">
-                <h3 className="text-sm font-medium text-text-primary font-mono">{selected.name}</h3>
-                <div className={`flex items-center gap-1.5 text-xs ${selected.isActive ? 'text-status-approved' : 'text-text-muted'}`}>
-                  {selected.isActive ? <CheckCircle className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}
-                  {selected.isActive ? 'Active' : 'Inactive'}
-                </div>
-              </div>
-              <p className="text-sm text-text-secondary leading-relaxed">{selected.description}</p>
+function StatTile({ label, value, color }: { label: string; value: number; color: string }) {
+  return (
+    <Card>
+      <CardContent className="p-5">
+        <div className={cn('text-3xl font-semibold tabular-nums', color)}>{value}</div>
+        <div className="text-sm text-muted-foreground mt-1">{label}</div>
+      </CardContent>
+    </Card>
+  )
+}
 
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <div className="text-[10px] text-text-muted uppercase tracking-wider mb-1">Decision</div>
-                  <PolicyBadge decision={selected.decision} />
-                </div>
-                <div>
-                  <div className="text-[10px] text-text-muted uppercase tracking-wider mb-1">Bundle</div>
-                  <div className="text-sm text-text-primary">{selected.bundle}</div>
-                </div>
-                <div>
-                  <div className="text-[10px] text-text-muted uppercase tracking-wider mb-1">Scope</div>
-                  <div className="text-sm text-text-primary">{selected.scope}</div>
-                </div>
-                <div>
-                  <div className="text-[10px] text-text-muted uppercase tracking-wider mb-1">Applies To</div>
-                  <div className="flex flex-wrap gap-1">
-                    {selected.appliesTo.map(s => (
-                      <span key={s} className="text-xs font-mono bg-surface-raised px-1.5 py-0.5 rounded text-text-secondary">{s}</span>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* Enriched details — trigger conditions, affected actions, example */}
-              {meta && (
-                <>
-                  <div className="border-t border-border pt-3">
-                    <div className="text-[10px] text-text-muted uppercase tracking-wider mb-2 flex items-center gap-1">
-                      <Zap className="w-3 h-3" /> Trigger Conditions
-                    </div>
-                    <ul className="space-y-1">
-                      {meta.triggerConditions.map((tc, i) => (
-                        <li key={i} className="text-xs text-text-secondary flex items-center gap-1.5">
-                          <span className="w-1 h-1 rounded-full bg-accent flex-shrink-0" />
-                          {tc}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-
-                  <div className="border-t border-border pt-3">
-                    <div className="text-[10px] text-text-muted uppercase tracking-wider mb-2 flex items-center gap-1">
-                      <AlertTriangle className="w-3 h-3" /> Affected Actions
-                    </div>
-                    <ul className="space-y-1">
-                      {meta.affectedActions.map((aa, i) => (
-                        <li key={i} className="text-xs text-text-secondary flex items-center gap-1.5">
-                          <span className={`w-1 h-1 rounded-full flex-shrink-0 ${
-                            selected.decision === 'deny' ? 'bg-risk-critical' : selected.decision === 'escalate' ? 'bg-status-escalated' : 'bg-status-approved'
-                          }`} />
-                          {aa}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-
-                  <div className="bg-surface-raised rounded p-3">
-                    <div className="text-[10px] text-text-muted uppercase tracking-wider mb-1 flex items-center gap-1">
-                      <FileText className="w-3 h-3" /> Example Outcome
-                    </div>
-                    <p className="text-xs text-text-secondary leading-relaxed">{meta.exampleOutcome}</p>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3 text-xs">
-                    <div>
-                      <div className="text-[10px] text-text-muted uppercase tracking-wider mb-1">Owner</div>
-                      <div className="text-text-primary">{meta.owner}</div>
-                    </div>
-                    <div>
-                      <div className="text-[10px] text-text-muted uppercase tracking-wider mb-1">Last Modified</div>
-                      <div className="text-text-secondary">{timeAgo(meta.lastModified)}</div>
-                    </div>
-                  </div>
-
-                  <div className="bg-accent/5 border border-accent/20 rounded p-2.5">
-                    <div className="text-[10px] text-accent uppercase tracking-wider mb-1 flex items-center gap-1">
-                      <ArrowUpRight className="w-3 h-3" /> Workflow Stage
-                    </div>
-                    <p className="text-xs text-accent">{meta.workflowStage}</p>
-                  </div>
-                </>
-              )}
-
-              {/* Linked audit events */}
-              {linkedEvents.length > 0 && (
-                <div className="border-t border-border pt-3">
-                  <div className="text-[10px] text-text-muted uppercase tracking-wider mb-2 flex items-center gap-1">
-                    <Clock className="w-3 h-3" /> Recent Activity ({linkedEvents.length})
-                  </div>
-                  <div className="space-y-1.5">
-                    {linkedEvents.map(event => (
-                      <div key={event.id} className="flex items-center gap-2 text-xs">
-                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${
-                          event.result === 'blocked' ? 'bg-risk-critical/10 text-risk-critical'
-                            : event.result === 'escalated' ? 'bg-status-escalated/10 text-status-escalated'
-                            : event.result === 'denied' ? 'bg-risk-critical/10 text-risk-critical'
-                            : 'bg-status-approved/10 text-status-approved'
-                        }`}>{event.result}</span>
-                        <span className="text-text-secondary truncate">{event.objectTitle}</span>
-                        <span className="text-text-muted ml-auto flex-shrink-0">{timeAgo(event.timestamp)}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* What this means */}
-              <div className="bg-surface-raised rounded p-3">
-                <div className="text-xs text-text-muted mb-1">What this means</div>
-                <div className="text-sm text-text-secondary">
-                  {selected.decision === 'deny' && 'This action is hard-blocked. It cannot be executed under any circumstances without policy change.'}
-                  {selected.decision === 'escalate' && 'This action requires human escalation and approval before it can proceed.'}
-                  {selected.decision === 'simulate_only' && 'This action can only be simulated. Production execution is not permitted.'}
-                  {selected.decision === 'allow' && 'This action is permitted under the current policy when all other conditions are met.'}
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="bg-surface rounded-lg border border-border p-8 text-center">
-              <Shield className="w-8 h-8 text-text-muted mx-auto mb-2" />
-              <p className="text-sm text-text-muted">Select a policy rule to view details</p>
-            </div>
-          )}
-        </div>
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div>
+      <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">
+        {label}
       </div>
+      {children}
+    </div>
+  )
+}
+
+function SectionList({
+  icon,
+  label,
+  items,
+  dotColor,
+}: {
+  icon: React.ReactNode
+  label: string
+  items: string[]
+  dotColor: string
+}) {
+  return (
+    <div>
+      <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-2">
+        {icon} {label}
+      </div>
+      <ul className="space-y-1.5">
+        {items.map((item, i) => (
+          <li key={i} className="text-sm text-foreground/85 flex items-start gap-2">
+            <span className={cn('w-1.5 h-1.5 rounded-full flex-shrink-0 mt-1.5', dotColor)} />
+            {item}
+          </li>
+        ))}
+      </ul>
     </div>
   )
 }

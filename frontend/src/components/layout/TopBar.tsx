@@ -1,170 +1,165 @@
-import { useState, useRef, useEffect } from 'react';
-import { Search, ChevronDown, Bell, CircleUser, Check, LogOut } from 'lucide-react';
-import { cn } from '@/lib/utils';
-import { useRole, roles, type Role } from '@/lib/roles';
-import { useAuth } from '@/lib/auth';
-import { useNavigate } from 'react-router-dom';
+/**
+ * TopBar — search, environment, role badge, user menu.
+ *
+ * Phase 4: bigger search input (h-10), user menu collapsed to avatar +
+ * dropdown, environment + policy indicators pulled into compact pill row.
+ */
+import { useState } from 'react'
+import { Search, ChevronDown, LogOut, Shield, Settings as SettingsIcon, User } from 'lucide-react'
+import { cn } from '@/lib/utils'
+import { useRole, roles, type Role } from '@/lib/roles'
+import { useAuth } from '@/lib/auth'
+import { useNavigate } from 'react-router-dom'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
 
 const environments = [
   { id: 'production', label: 'Production', color: 'bg-risk-critical' },
   { id: 'staging', label: 'Staging', color: 'bg-status-pending' },
   { id: 'development', label: 'Development', color: 'bg-status-approved' },
-  { id: 'sandbox', label: 'Sandbox', color: 'bg-accent' },
-];
+  { id: 'sandbox', label: 'Sandbox', color: 'bg-primary' },
+]
 
-const roleList = Object.values(roles);
+const roleList = Object.values(roles)
 
 export function TopBar() {
-  const { role, config, setRole } = useRole();
-  const { user, logout } = useAuth();
-  const navigate = useNavigate();
-  const [envOpen, setEnvOpen] = useState(false);
-  const [roleOpen, setRoleOpen] = useState(false);
-  // Only admins may impersonate other roles. Everyone else sees a static
-  // label of their own role so the UI still shows context, but the
-  // dropdown that lets a non-admin grant themselves additional permissions
-  // is hidden. The backend still enforces RBAC on every mutation — this is
-  // a UX guard, not the security boundary.
-  const canSwitchRole = user?.role === 'admin';
+  const { role, config, setRole } = useRole()
+  const { user, logout } = useAuth()
+  const navigate = useNavigate()
+  const [activeEnv, setActiveEnv] = useState(environments[0])
+
+  const canSwitchRole = user?.role === 'admin'
 
   const handleLogout = async () => {
-    await logout();
-    navigate('/login');
-  };
-  const [activeEnv, setActiveEnv] = useState(environments[0]);
-  const envRef = useRef<HTMLDivElement>(null);
-  const roleRef = useRef<HTMLDivElement>(null);
+    await logout()
+    navigate('/login')
+  }
 
-  useEffect(() => {
-    function handleClickOutside(e: MouseEvent) {
-      if (envRef.current && !envRef.current.contains(e.target as Node)) setEnvOpen(false);
-      if (roleRef.current && !roleRef.current.contains(e.target as Node)) setRoleOpen(false);
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+  // Compact initials for the user avatar.
+  const initials =
+    user?.name
+      ?.split(' ')
+      .map((s) => s[0])
+      .slice(0, 2)
+      .join('')
+      .toUpperCase() ?? '?'
 
   return (
-    <header className="fixed top-0 right-0 z-20 flex h-14 items-center gap-6 border-b border-border bg-surface px-8" style={{ left: '13rem' }}>
-      {/* Search — grows to fill available space */}
-      <div className="relative flex-1 max-w-lg">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-text-muted" />
-        <input
-          type="text"
+    <header
+      className="fixed top-0 right-0 z-20 flex h-16 items-center gap-4 border-b border-border bg-card px-6"
+      style={{ left: '15rem' }}
+    >
+      {/* Search */}
+      <div className="relative flex-1 max-w-xl">
+        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
           placeholder="Search changes, incidents, requests..."
-          className={cn(
-            'h-9 w-full rounded-md border border-border-subtle bg-surface-raised pl-10 pr-4 text-sm text-text-primary',
-            'placeholder:text-text-muted',
-            'focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent'
-          )}
+          className="pl-10 bg-background border-border"
         />
       </div>
 
-      {/* Right-side controls */}
-      <div className="flex items-center gap-3 ml-auto flex-shrink-0">
+      <div className="flex items-center gap-2 ml-auto">
         {/* Environment selector */}
-        <div className="relative" ref={envRef}>
-          <button
-            type="button"
-            onClick={() => setEnvOpen(!envOpen)}
-            className="flex items-center gap-2 rounded-md border border-border-subtle bg-surface-raised px-3 py-1.5 text-sm text-text-secondary hover:text-text-primary transition-colors whitespace-nowrap"
-          >
-            <span className={cn('h-2 w-2 rounded-full flex-shrink-0', activeEnv.color)} />
-            <span className="hidden xl:inline">{activeEnv.label}</span>
-            <ChevronDown className={cn('h-3.5 w-3.5 transition-transform flex-shrink-0', envOpen && 'rotate-180')} />
-          </button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="sm" className="gap-2 h-9">
+              <span className={cn('h-2 w-2 rounded-full', activeEnv.color)} />
+              <span>{activeEnv.label}</span>
+              <ChevronDown className="h-3.5 w-3.5" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-48">
+            <DropdownMenuLabel>Environment</DropdownMenuLabel>
+            <DropdownMenuSeparator />
+            {environments.map((env) => (
+              <DropdownMenuItem key={env.id} onSelect={() => setActiveEnv(env)}>
+                <span className={cn('h-2 w-2 rounded-full', env.color)} />
+                <span>{env.label}</span>
+              </DropdownMenuItem>
+            ))}
+          </DropdownMenuContent>
+        </DropdownMenu>
 
-          {envOpen && (
-            <div className="absolute right-0 top-full mt-1 w-48 rounded-lg border border-border bg-surface-raised shadow-lg py-1 z-50">
-              {environments.map(env => (
-                <button
-                  key={env.id}
-                  onClick={() => { setActiveEnv(env); setEnvOpen(false); }}
-                  className="w-full flex items-center gap-2.5 px-3 py-2 text-sm text-text-secondary hover:bg-surface-overlay hover:text-text-primary transition-colors"
-                >
-                  <span className={cn('h-2 w-2 rounded-full', env.color)} />
-                  <span className="flex-1 text-left">{env.label}</span>
-                  {env.id === activeEnv.id && <Check className="h-3.5 w-3.5 text-accent" />}
-                </button>
-              ))}
-            </div>
-          )}
+        {/* Policy status — minimal pill */}
+        <div className="hidden md:flex items-center gap-1.5 px-3 h-9 rounded-md border border-border bg-secondary text-xs text-muted-foreground">
+          <span className="h-2 w-2 rounded-full bg-status-approved" />
+          <span>Policy Active</span>
         </div>
 
-        {/* Policy status */}
-        <div className="flex items-center gap-1.5 text-xs text-text-secondary whitespace-nowrap">
-          <span className="h-2 w-2 rounded-full bg-emerald-500" />
-          <span className="hidden lg:inline">Policy Active</span>
-        </div>
-
-        {/* Notifications */}
-        <button
-          type="button"
-          className="relative rounded-md p-2 text-text-secondary hover:bg-surface-raised hover:text-text-primary transition-colors"
-        >
-          <Bell className="h-4 w-4" />
-          <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-red-500" />
-        </button>
-
-        {/* Role badge / switcher — non-admins see a static badge of their own
-            role; admins get the dropdown for impersonation during demos and
-            governance reviews. */}
-        {canSwitchRole ? (
-          <div className="relative" ref={roleRef}>
-            <button
-              type="button"
-              onClick={() => setRoleOpen(!roleOpen)}
-              className="flex items-center gap-2 rounded-md border border-border-subtle bg-surface-raised px-3 py-1.5 text-sm text-text-secondary hover:text-text-primary transition-colors whitespace-nowrap"
-              title="Impersonate role (admin only)"
-            >
-              <CircleUser className="h-4 w-4 flex-shrink-0" />
-              <span className="hidden sm:inline">{config.label}</span>
-              <ChevronDown className={cn('h-3.5 w-3.5 transition-transform flex-shrink-0', roleOpen && 'rotate-180')} />
-            </button>
-
-            {roleOpen && (
-              <div className="absolute right-0 top-full mt-1 w-64 rounded-lg border border-border bg-surface-raised shadow-lg py-1 z-50">
-                <div className="px-3 py-1.5 text-[10px] uppercase tracking-wider text-text-muted border-b border-border-subtle">
-                  Impersonate (admin)
-                </div>
-                {roleList.map(r => (
-                  <button
-                    key={r.id}
-                    onClick={() => { setRole(r.id); setRoleOpen(false); }}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-surface-overlay transition-colors"
-                  >
-                    <div className="flex-1 min-w-0">
-                      <div className={cn('text-sm', r.id === role ? 'text-text-primary font-medium' : 'text-text-secondary')}>{r.label}</div>
-                      <div className="text-xs text-text-muted truncate">{r.description}</div>
-                    </div>
-                    {r.id === role && <Check className="h-3.5 w-3.5 text-accent flex-shrink-0" />}
-                  </button>
-                ))}
+        {/* User menu */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="sm" className="gap-2 h-9 pl-2 pr-3">
+              <div className="h-7 w-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-semibold">
+                {initials}
               </div>
-            )}
-          </div>
-        ) : (
-          <div className="flex items-center gap-2 rounded-md border border-border-subtle bg-surface-raised px-3 py-1.5 text-sm text-text-secondary whitespace-nowrap">
-            <CircleUser className="h-4 w-4 flex-shrink-0" />
-            <span className="hidden sm:inline">{config.label}</span>
-          </div>
-        )}
+              <span className="hidden md:inline text-sm font-medium">{user?.name ?? 'Guest'}</span>
+              <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-64">
+            <DropdownMenuLabel>
+              <div className="flex flex-col">
+                <span className="text-sm font-semibold text-foreground">{user?.name}</span>
+                <span className="text-xs text-muted-foreground normal-case tracking-normal">
+                  {user?.email}
+                </span>
+              </div>
+            </DropdownMenuLabel>
+            <DropdownMenuSeparator />
 
-        {/* User name + Logout */}
-        {user && (
-          <>
-            <span className="text-xs text-text-secondary hidden lg:inline truncate max-w-[120px]">{user.name}</span>
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="rounded-md p-2 text-text-secondary hover:bg-surface-raised hover:text-red-400 transition-colors"
-              title="Sign out"
-            >
+            <DropdownMenuItem disabled>
+              <User className="h-4 w-4" />
+              <span>Profile</span>
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => navigate('/settings')}>
+              <SettingsIcon className="h-4 w-4" />
+              <span>Settings</span>
+            </DropdownMenuItem>
+
+            {canSwitchRole && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuLabel>Impersonate role (admin)</DropdownMenuLabel>
+                {roleList.map((r) => (
+                  <DropdownMenuItem
+                    key={r.id}
+                    onSelect={() => setRole(r.id as Role)}
+                    className={cn(role === r.id && 'bg-secondary')}
+                  >
+                    <Shield className="h-4 w-4" />
+                    <span>{r.label}</span>
+                  </DropdownMenuItem>
+                ))}
+              </>
+            )}
+
+            {!canSwitchRole && (
+              <>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem disabled>
+                  <Shield className="h-4 w-4" />
+                  <span>Role: {config.label}</span>
+                </DropdownMenuItem>
+              </>
+            )}
+
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={handleLogout} className="text-destructive focus:text-destructive">
               <LogOut className="h-4 w-4" />
-            </button>
-          </>
-        )}
+              <span>Sign out</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </header>
-  );
+  )
 }

@@ -182,11 +182,11 @@ export default function Approvals() {
   ]
 
   return (
-    <div className="space-y-10">
+    <div className="space-y-12">
       {/* Header */}
-      <div>
+      <div className="mb-6">
         <h1 className="text-3xl font-semibold text-foreground tracking-tight">Approvals</h1>
-        <p className="text-base text-muted-foreground mt-2">
+        <p className="text-base text-muted-foreground mt-4">
           {pendingCount} pending approval{pendingCount !== 1 ? 's' : ''} requiring action
         </p>
       </div>
@@ -255,9 +255,9 @@ export default function Approvals() {
 
       {/* Pending */}
       {!isLoading && pending.length > 0 && (
-        <section className="space-y-4">
+        <section className="space-y-6">
           <SectionHeading count={pending.length}>Pending</SectionHeading>
-          <div className="space-y-4">
+          <div className="space-y-6">
             {pending.map((approval) => (
               <PendingApprovalCard
                 key={approval.id}
@@ -279,7 +279,7 @@ export default function Approvals() {
 
       {/* Resolved */}
       {!isLoading && resolved.length > 0 && (
-        <section className="space-y-4">
+        <section className="space-y-6">
           <SectionHeading count={resolved.length}>Resolved</SectionHeading>
           <Card>
             <CardContent className="p-0 divide-y divide-border">

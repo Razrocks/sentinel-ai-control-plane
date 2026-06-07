@@ -40,7 +40,7 @@ export default function Settings() {
   }
 
   return (
-    <div className="space-y-10">
+    <div className="space-y-12">
       <div>
         <h1 className="text-2xl font-semibold text-text-primary">Settings</h1>
         <p className="text-text-secondary mt-1">

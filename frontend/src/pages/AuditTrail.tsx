@@ -150,12 +150,12 @@ export default function AuditTrail() {
   const escalationCount = auditEvents.filter((e) => e.result === 'escalated').length
 
   return (
-    <div className="space-y-10">
+    <div className="space-y-12">
       {/* Header */}
-      <div className="flex items-start justify-between gap-4">
+      <div className="mb-6 flex items-start justify-between gap-4">
         <div>
           <h1 className="text-3xl font-semibold text-foreground tracking-tight">Audit Trail</h1>
-          <p className="text-base text-muted-foreground mt-2">
+          <p className="text-base text-muted-foreground mt-4">
             {isAdmin
               ? 'Governance event history — policy evaluations, blocks, access decisions, and restrictions'
               : 'Complete decision and action history'}

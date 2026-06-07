@@ -238,9 +238,9 @@ export default function AccessRequests() {
 
   return (
     <div>
-      <div style={{ marginBottom: '3rem' }}>
+      <div className="mb-6">
         <h1 className="text-3xl font-semibold text-foreground tracking-tight">Access Requests</h1>
-        <p className="text-base text-muted-foreground mt-2">
+        <p className="text-base text-muted-foreground mt-4">
           {isAccessApprover
             ? 'Access requests in your approval scope'
             : 'Access and entitlement requests with approval routing'}

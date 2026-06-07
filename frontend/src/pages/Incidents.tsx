@@ -214,9 +214,9 @@ export default function Incidents() {
 
   return (
     <div>
-      <div style={{ marginBottom: '3rem' }}>
+      <div className="mb-6">
         <h1 className="text-3xl font-semibold text-foreground tracking-tight">Incidents</h1>
-        <p className="text-base text-muted-foreground mt-2">
+        <p className="text-base text-muted-foreground mt-4">
           ServiceNow incidents and support issues
         </p>
       </div>

@@ -184,9 +184,9 @@ export default function Changes() {
 
   return (
     <div>
-      <div style={{ marginBottom: '3rem' }}>
+      <div className="mb-6">
         <h1 className="text-3xl font-semibold text-foreground tracking-tight">Changes</h1>
-        <p className="text-base text-muted-foreground mt-2">
+        <p className="text-base text-muted-foreground mt-4">
           Engineering and release change requests
         </p>
       </div>

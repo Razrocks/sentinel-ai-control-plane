@@ -71,10 +71,12 @@ export function IntegrationsPanel() {
     return <div className="text-text-muted text-sm">Loading integrations...</div>
   }
 
-  const connected = integrationsData?.integrations ?? []
-  const connectedTypes = new Set(
-    connected.filter((i) => i.status !== 'disconnected').map((i) => i.type),
-  )
+  const allRows = integrationsData?.integrations ?? []
+  // Only show in "Connected" section if the integration is actively live.
+  // Disconnected rows fall through to the Available section so the
+  // operator can re-connect with fresh credentials.
+  const connected = allRows.filter((i) => i.status !== 'disconnected')
+  const connectedTypes = new Set(connected.map((i) => i.type))
   const availableTypes = (typesData?.types ?? []).filter((t) => !connectedTypes.has(t.type as never))
 
   return (
@@ -233,7 +235,11 @@ type WizardStep = 'creds' | 'scopes' | 'webhooks' | 'done'
 function ConnectModal({ type, onClose }: { type: string; onClose: () => void }) {
   const [step, setStep] = useState<WizardStep>('creds')
   const [credential, setCredential] = useState('')
+  const [webhookSecret, setWebhookSecret] = useState('')
   const [displayName, setDisplayName] = useState(`${TYPE_LABELS[type] ?? type}`)
+  // Providers that ship a separate signing secret (distinct from the API
+  // credential) and need a second input on the credentials step.
+  const needsWebhookSecret = type === 'slack'
   const [testResult, setTestResult] = useState<{ ok: boolean; identity?: string; errorMessage?: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [selectedScopes, setSelectedScopes] = useState<Set<string>>(new Set())
@@ -264,7 +270,14 @@ function ConnectModal({ type, onClose }: { type: string; onClose: () => void }) 
   const handleSaveCreds = async () => {
     setError(null)
     try {
-      await connect.mutateAsync({ type, payload: { credential, displayName } })
+      await connect.mutateAsync({
+        type,
+        payload: {
+          credential,
+          displayName,
+          ...(needsWebhookSecret && webhookSecret ? { webhookSecret } : {}),
+        },
+      })
       setStep('scopes')
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Connect failed')
@@ -345,7 +358,29 @@ function ConnectModal({ type, onClose }: { type: string; onClose: () => void }) 
                     Required scopes: <code>repo</code>, <code>admin:repo_hook</code>.
                   </p>
                 )}
+                {type === 'slack' && (
+                  <p className="text-[10px] text-text-muted mt-1">
+                    Bot User OAuth Token from your Slack app (starts with <code>xoxb-</code>).
+                  </p>
+                )}
               </div>
+              {needsWebhookSecret && (
+                <div>
+                  <label className="text-xs text-text-muted">Signing secret</label>
+                  <input
+                    type="password"
+                    value={webhookSecret}
+                    onChange={(e) => setWebhookSecret(e.target.value)}
+                    placeholder="signing secret · encrypted at rest"
+                    className="mt-1 w-full bg-surface-raised border border-border rounded px-3 py-2 text-sm text-text-primary font-mono"
+                    autoComplete="off"
+                  />
+                  <p className="text-[10px] text-text-muted mt-1">
+                    Slack app config → Basic Information → App Credentials → Signing Secret.
+                    Used to verify inbound webhook HMAC.
+                  </p>
+                </div>
+              )}
               {testResult && (
                 <div
                   className={`text-xs rounded p-2 ${
@@ -382,7 +417,13 @@ function ConnectModal({ type, onClose }: { type: string; onClose: () => void }) 
                 </button>
                 <button
                   onClick={handleSaveCreds}
-                  disabled={!credential || !displayName || connect.isPending || !testResult?.ok}
+                  disabled={
+                    !credential ||
+                    !displayName ||
+                    connect.isPending ||
+                    !testResult?.ok ||
+                    (needsWebhookSecret && !webhookSecret)
+                  }
                   className="text-xs font-medium px-3 py-1.5 rounded bg-accent text-white disabled:opacity-40"
                 >
                   {connect.isPending ? 'Saving...' : 'Save & continue →'}
@@ -458,7 +499,9 @@ function ConnectModal({ type, onClose }: { type: string; onClose: () => void }) 
           <>
             <div className="p-4 space-y-3">
               <p className="text-xs text-text-secondary">
-                Sentinel will register a webhook on each selected scope pointing to its public URL.
+                {type === 'slack'
+                  ? 'Slack does not support API-side webhook registration. Paste the delivery URL below into your Slack app config — Sentinel just records the channels you picked.'
+                  : 'Sentinel will register a webhook on each selected scope pointing to its public URL.'}
               </p>
               <div>
                 <label className="text-xs text-text-muted">Public base URL (Sentinel backend)</label>
@@ -471,10 +514,19 @@ function ConnectModal({ type, onClose }: { type: string; onClose: () => void }) 
                 <p className="text-[10px] text-text-muted mt-1">
                   Webhook delivery URL: <code>{publicBaseUrl}/api/webhooks/{type}</code>
                 </p>
-                <p className="text-[10px] text-text-muted">
-                  GitHub must be able to reach this URL. For local dev use a tunnel (ngrok, cloudflared)
-                  and paste its HTTPS URL here.
-                </p>
+                {type === 'slack' ? (
+                  <p className="text-[10px] text-text-muted">
+                    Slack app config → <strong>Event Subscriptions</strong> → enable → paste the
+                    delivery URL → subscribe to bot events: <code>app_mention</code>.
+                    Slack must be able to reach this URL — local dev needs a tunnel
+                    (cloudflared, ngrok).
+                  </p>
+                ) : (
+                  <p className="text-[10px] text-text-muted">
+                    Provider must be able to reach this URL. For local dev use a tunnel (ngrok,
+                    cloudflared) and paste its HTTPS URL here.
+                  </p>
+                )}
               </div>
               <div className="text-xs text-text-secondary">
                 Will register webhooks on {selectedScopes.size}{' '}

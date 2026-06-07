@@ -138,7 +138,18 @@ export async function integrationsRoutes(app: FastifyInstance) {
    */
   app.post<{
     Params: { type: string }
-    Body: { credential: string; displayName: string; config?: Record<string, unknown> }
+    Body: {
+      credential: string
+      displayName: string
+      config?: Record<string, unknown>
+      /**
+       * Some providers (e.g. Slack) require a signing secret that's
+       * separate from the API credential. When present, we encrypt + store
+       * it on Integration.webhookSecretCiphertext so the router can verify
+       * inbound HMAC signatures without us minting our own secret.
+       */
+      webhookSecret?: string
+    }
   }>(
     '/api/integrations/:type/connect',
     { preHandler: [requireAuth, requireRole('admin')] },
@@ -151,7 +162,7 @@ export async function integrationsRoutes(app: FastifyInstance) {
           message: 'ENCRYPTION_KEY is not configured. Cannot store credentials safely.',
         })
       }
-      const { credential, displayName, config: cfg } = request.body
+      const { credential, displayName, config: cfg, webhookSecret } = request.body
       if (!credential) throw new ValidationError('credential required')
       if (!displayName) throw new ValidationError('displayName required')
 
@@ -168,6 +179,7 @@ export async function integrationsRoutes(app: FastifyInstance) {
       }
 
       const ciphertext = encrypt(credential)
+      const webhookSecretCiphertext = webhookSecret ? encrypt(webhookSecret) : undefined
 
       // Upsert — re-running the wizard for an existing integration
       // replaces the credential rather than 409'ing.
@@ -178,6 +190,7 @@ export async function integrationsRoutes(app: FastifyInstance) {
           displayName,
           status: 'connected',
           credentialsCiphertext: ciphertext,
+          webhookSecretCiphertext,
           config: (cfg ?? {}) as Prisma.InputJsonValue,
           createdBy: request.user!.name,
           lastCheckedAt: new Date(),
@@ -186,6 +199,7 @@ export async function integrationsRoutes(app: FastifyInstance) {
           displayName,
           status: 'connected',
           credentialsCiphertext: ciphertext,
+          ...(webhookSecretCiphertext ? { webhookSecretCiphertext } : {}),
           config: (cfg ?? {}) as Prisma.InputJsonValue,
           lastCheckedAt: new Date(),
           lastError: null,
@@ -338,11 +352,20 @@ export async function integrationsRoutes(app: FastifyInstance) {
         })
       }
 
+      // Some adapters (e.g. Slack) don't mint a new secret during webhook
+      // registration — the operator already provided the signing secret on
+      // the connect step. They signal this by returning the sentinel
+      // `__already-stored__` placeholder. Skip the overwrite in that case
+      // so we don't clobber the real secret.
+      const shouldStoreSharedSecret = sharedSecret !== '__already-stored__'
+
       const updated = await prisma.integration.update({
         where: { id: integration.id },
         data: {
           status: 'connected',
-          webhookSecretCiphertext: encrypt(sharedSecret),
+          ...(shouldStoreSharedSecret
+            ? { webhookSecretCiphertext: encrypt(sharedSecret) }
+            : {}),
           config: {
             ...(integration.config as object),
             scopes: scopeIds,

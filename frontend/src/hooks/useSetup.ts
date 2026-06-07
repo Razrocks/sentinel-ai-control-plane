@@ -70,7 +70,12 @@ export function useConnectIntegration() {
       payload,
     }: {
       type: string
-      payload: { credential: string; displayName: string; config?: Record<string, unknown> }
+      payload: {
+        credential: string
+        displayName: string
+        config?: Record<string, unknown>
+        webhookSecret?: string
+      }
     }) => api.connectIntegration(type, payload),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['integrations:list'] }),
   })

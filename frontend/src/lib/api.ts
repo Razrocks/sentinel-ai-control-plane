@@ -260,7 +260,13 @@ export const api = {
     }),
   connectIntegration: (
     type: string,
-    payload: { credential: string; displayName: string; config?: Record<string, unknown> },
+    payload: {
+      credential: string
+      displayName: string
+      config?: Record<string, unknown>
+      /** Optional secondary secret (Slack signing secret, etc.). */
+      webhookSecret?: string
+    },
   ) =>
     apiFetch<{ integration: IntegrationRow }>(`/integrations/${type}/connect`, {
       method: 'POST',

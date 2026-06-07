@@ -8,8 +8,8 @@
  */
 
 import './github/adapter.js'
+import './slack/adapter.js'
 // Phase 3 — additional providers slot in here as their adapters land.
-// import './slack/adapter.js'
 // import './linear/adapter.js'
 // import './sentry/adapter.js'
 // import './pagerduty/adapter.js'

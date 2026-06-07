@@ -180,7 +180,33 @@ export async function webhookRoutes(app: FastifyInstance) {
     // HMAC verify before we touch the DB write path. Bad signature =
     // 401, no DB write, no adapter call. This is the security gate.
     if (!verifyByType(typeParam, rawBody, headers, secret)) {
+      // Debug: surface why so we can distinguish "secret wrong", "stale
+      // timestamp", "missing header" without exposing the secret itself.
+      request.log.warn(
+        {
+          type: typeParam,
+          hasSig: !!headers['x-slack-signature'],
+          hasTs: !!headers['x-slack-request-timestamp'],
+          tsDelta:
+            headers['x-slack-request-timestamp']
+              ? Math.floor(Date.now() / 1000) - Number(headers['x-slack-request-timestamp'])
+              : null,
+          rawLen: rawBody.length,
+          secretLen: secret.length,
+        },
+        'webhook signature verify failed',
+      )
       return reply.status(401).send({ error: 'INVALID_SIGNATURE' })
+    }
+
+    // Slack URL verification handshake: when the operator pastes our
+    // delivery URL into the Slack app's Event Subscriptions page, Slack
+    // sends a `url_verification` event whose response body must echo back
+    // the `challenge` field. Done at the router level so we don't pollute
+    // the WebhookEvent table with handshake noise.
+    if (typeParam === 'slack' && (parsed as { type?: string })?.type === 'url_verification') {
+      const challenge = (parsed as { challenge?: string }).challenge ?? ''
+      return reply.status(200).send({ challenge })
     }
 
     const providerEventId = extractEventId(typeParam, headers, rawBody)

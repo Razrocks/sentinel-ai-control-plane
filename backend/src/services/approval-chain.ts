@@ -1,6 +1,7 @@
 import { prisma } from '../lib/prisma.js'
 import { NotFoundError, ValidationError, PreconditionFailedError } from '../lib/errors.js'
 import { logApprovalDecision, logAllApprovalsComplete } from './audit.js'
+import { notifyApprovalDecided } from '../integrations/slack/notify.js'
 import type { ApprovalStatus, CoApprovalStatus, AuditObjectType } from '@prisma/client'
 
 // ─── Types ──────────────────────────────────────────────
@@ -184,6 +185,18 @@ export async function resolveCoApproval(
   if (deniedCount > 0 && newApprovalStatus === 'denied') {
     await propagateDenialToLinkedObject(approval.type, approval.linkedObjectId)
   }
+
+  // 9. Best-effort Slack notification. Fired AFTER the DB commit so a
+  // Slack outage can't roll back the decision. Notifier swallows errors
+  // internally — no need to wrap here.
+  void notifyApprovalDecided({
+    approvalId: approval.id,
+    approvalTitle: approval.title,
+    decision,
+    actor: actorName,
+    condition,
+    isFinal: isFinalApproval || (deniedCount > 0 && newApprovalStatus === 'denied'),
+  })
 
   return {
     approval: {

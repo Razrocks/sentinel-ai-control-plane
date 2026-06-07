@@ -9,9 +9,9 @@
 
 import './github/adapter.js'
 import './slack/adapter.js'
+import './linear/adapter.js'
+import './sentry/adapter.js'
 // Phase 3 — additional providers slot in here as their adapters land.
-// import './linear/adapter.js'
-// import './sentry/adapter.js'
 // import './pagerduty/adapter.js'
 
 // Re-export the public surface so callers can `import { ... } from '@/integrations'`.

@@ -39,7 +39,8 @@
       "Bash(pg_isready -h localhost -p 5432)",
       "Bash(echo \"EXIT: $?\")",
       "Bash(git check-ignore *)",
-      "Bash(echo \"exit: $?\")"
+      "Bash(echo \"exit: $?\")",
+      "Bash(cd /c/Users/Razeen/Desktop/Harness/backend && npx tsc --noEmit 2>&1 | tail -5 && echo \"---\" && cd ../frontend && npx tsc --noEmit 2>&1 | tail -5)"
     ]
   }
 }

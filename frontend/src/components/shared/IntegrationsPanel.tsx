@@ -239,7 +239,7 @@ function ConnectModal({ type, onClose }: { type: string; onClose: () => void }) 
   const [displayName, setDisplayName] = useState(`${TYPE_LABELS[type] ?? type}`)
   // Providers that ship a separate signing secret (distinct from the API
   // credential) and need a second input on the credentials step.
-  const needsWebhookSecret = type === 'slack'
+  const needsWebhookSecret = type === 'slack' || type === 'sentry'
   const [testResult, setTestResult] = useState<{ ok: boolean; identity?: string; errorMessage?: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [selectedScopes, setSelectedScopes] = useState<Set<string>>(new Set())
@@ -363,22 +363,42 @@ function ConnectModal({ type, onClose }: { type: string; onClose: () => void }) 
                     Bot User OAuth Token from your Slack app (starts with <code>xoxb-</code>).
                   </p>
                 )}
+                {type === 'sentry' && (
+                  <p className="text-[10px] text-text-muted mt-1">
+                    Internal Integration Auth Token (starts with <code>sntrys_</code>).
+                  </p>
+                )}
+                {type === 'linear' && (
+                  <p className="text-[10px] text-text-muted mt-1">
+                    Personal API key (starts with <code>lin_api_</code>) or OAuth token.
+                  </p>
+                )}
               </div>
               {needsWebhookSecret && (
                 <div>
-                  <label className="text-xs text-text-muted">Signing secret</label>
+                  <label className="text-xs text-text-muted">
+                    {type === 'sentry' ? 'Client Secret' : 'Signing secret'}
+                  </label>
                   <input
                     type="password"
                     value={webhookSecret}
                     onChange={(e) => setWebhookSecret(e.target.value)}
-                    placeholder="signing secret · encrypted at rest"
+                    placeholder="encrypted at rest · never logged"
                     className="mt-1 w-full bg-surface-raised border border-border rounded px-3 py-2 text-sm text-text-primary font-mono"
                     autoComplete="off"
                   />
-                  <p className="text-[10px] text-text-muted mt-1">
-                    Slack app config → Basic Information → App Credentials → Signing Secret.
-                    Used to verify inbound webhook HMAC.
-                  </p>
+                  {type === 'slack' && (
+                    <p className="text-[10px] text-text-muted mt-1">
+                      Slack app config → Basic Information → App Credentials → Signing Secret.
+                      Used to verify inbound webhook HMAC.
+                    </p>
+                  )}
+                  {type === 'sentry' && (
+                    <p className="text-[10px] text-text-muted mt-1">
+                      Sentry Internal Integration → Credentials → Client Secret.
+                      Used to verify the Sentry-Hook-Signature on inbound events.
+                    </p>
+                  )}
                 </div>
               )}
               {testResult && (
@@ -501,7 +521,9 @@ function ConnectModal({ type, onClose }: { type: string; onClose: () => void }) 
               <p className="text-xs text-text-secondary">
                 {type === 'slack'
                   ? 'Slack does not support API-side webhook registration. Paste the delivery URL below into your Slack app config — Sentinel just records the channels you picked.'
-                  : 'Sentinel will register a webhook on each selected scope pointing to its public URL.'}
+                  : type === 'sentry'
+                    ? 'Sentry Internal Integrations are configured manually. Paste the delivery URL into your Sentry integration\'s Webhook URL field — Sentinel just records the projects you picked.'
+                    : 'Sentinel will register a webhook on each selected scope pointing to its public URL.'}
               </p>
               <div>
                 <label className="text-xs text-text-muted">Public base URL (Sentinel backend)</label>
@@ -514,14 +536,22 @@ function ConnectModal({ type, onClose }: { type: string; onClose: () => void }) 
                 <p className="text-[10px] text-text-muted mt-1">
                   Webhook delivery URL: <code>{publicBaseUrl}/api/webhooks/{type}</code>
                 </p>
-                {type === 'slack' ? (
+                {type === 'slack' && (
                   <p className="text-[10px] text-text-muted">
                     Slack app config → <strong>Event Subscriptions</strong> → enable → paste the
                     delivery URL → subscribe to bot events: <code>app_mention</code>.
                     Slack must be able to reach this URL — local dev needs a tunnel
                     (cloudflared, ngrok).
                   </p>
-                ) : (
+                )}
+                {type === 'sentry' && (
+                  <p className="text-[10px] text-text-muted">
+                    Sentry Internal Integration config → <strong>Webhook URL</strong> field →
+                    paste the delivery URL. Enable resources: <code>Issue</code>. Sentry must be
+                    able to reach this URL.
+                  </p>
+                )}
+                {type !== 'slack' && type !== 'sentry' && (
                   <p className="text-[10px] text-text-muted">
                     Provider must be able to reach this URL. For local dev use a tunnel (ngrok,
                     cloudflared) and paste its HTTPS URL here.

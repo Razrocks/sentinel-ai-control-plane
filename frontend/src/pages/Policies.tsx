@@ -683,150 +683,194 @@ function PolicyRuleDialog({ mode, onClose, onSubmit, error, isPending }: DialogP
         if (!o) onClose()
       }}
     >
-      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle className="flex items-center gap-2">
+      <DialogContent
+        className="w-[95vw] max-h-[92vh] overflow-y-auto p-0 sm:max-w-none"
+        style={{ width: 'min(1100px, 95vw)' }}
+      >
+        <DialogHeader
+          className="border-b border-border"
+          style={{ padding: '1.75rem 2.5rem 1rem 2.5rem' }}
+        >
+          <DialogTitle className="flex items-center gap-2.5 text-lg">
             <Shield className="h-5 w-5 text-primary" />
             {editing ? 'Edit policy rule' : 'New policy rule'}
           </DialogTitle>
-          <DialogDescription>
+          <DialogDescription className="text-sm">
             {editing
               ? 'Update the rule. Agents pick up changes on the next skill invocation.'
               : 'Define a new policy rule. Active rules feed into agent context immediately.'}
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-col gap-4">
-          <div className="grid grid-cols-2 gap-3">
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="rule-name">Name</Label>
-              <Input
-                id="rule-name"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                placeholder="auto_approve_low_risk"
-                disabled={!!editing}
+        <div
+          className="flex flex-col gap-7"
+          style={{ padding: '1.75rem 2.5rem' }}
+        >
+          {/* Identity block */}
+          <Section title="Identity" subtitle="How this rule is referenced in audit + agent prompts.">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <FormField label="Name" htmlFor="rule-name" hint={editing ? 'Immutable identifier.' : 'Snake_case identifier. Cannot be changed later.'}>
+                <Input
+                  id="rule-name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="auto_approve_low_risk"
+                  disabled={!!editing}
+                  className="h-11"
+                />
+              </FormField>
+              <FormField label="Bundle" htmlFor="rule-bundle" hint="Logical grouping (eg `default`, `prod-strict`).">
+                <Input
+                  id="rule-bundle"
+                  value={bundle}
+                  onChange={(e) => setBundle(e.target.value)}
+                  placeholder="default"
+                  className="h-11"
+                />
+              </FormField>
+            </div>
+          </Section>
+
+          {/* Behavior block */}
+          <Section title="Behavior" subtitle="What the rule does + where it applies.">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              <FormField label="Decision" htmlFor="rule-decision" hint="The verdict when this rule matches.">
+                <Select
+                  value={decision}
+                  onValueChange={(v) =>
+                    setDecision(v as 'allow' | 'deny' | 'escalate' | 'simulate_only')
+                  }
+                >
+                  <SelectTrigger id="rule-decision" className="w-full h-11 [&[data-size=default]]:h-11" data-size="default">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="allow">allow</SelectItem>
+                    <SelectItem value="deny">deny</SelectItem>
+                    <SelectItem value="escalate">escalate</SelectItem>
+                    <SelectItem value="simulate_only">simulate_only</SelectItem>
+                  </SelectContent>
+                </Select>
+              </FormField>
+              <FormField label="Scope" htmlFor="rule-scope" hint="Entity type the rule applies to.">
+                <Input
+                  id="rule-scope"
+                  value={scope}
+                  onChange={(e) => setScope(e.target.value)}
+                  placeholder="changes / access / incidents / global"
+                  className="h-11"
+                />
+              </FormField>
+            </div>
+
+            <FormField label="Description" htmlFor="rule-desc" hint="Short statement of what the rule enforces. Shown to agents + humans.">
+              <Textarea
+                id="rule-desc"
+                value={description}
+                onChange={(e) => setDescription(e.target.value)}
+                placeholder="What does this rule enforce?"
+                rows={3}
+                className="min-h-[80px] text-sm"
               />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="rule-bundle">Bundle</Label>
-              <Input
-                id="rule-bundle"
-                value={bundle}
-                onChange={(e) => setBundle(e.target.value)}
-                placeholder="default"
+            </FormField>
+
+            <FormField
+              label="Applies to"
+              htmlFor="rule-applies"
+              hint="One target per line. Agents match candidate work against these."
+            >
+              <Textarea
+                id="rule-applies"
+                value={appliesToText}
+                onChange={(e) => setAppliesToText(e.target.value)}
+                placeholder={'service:payment\nservice:orders\nenvironment:production'}
+                rows={4}
+                className="min-h-[110px] font-mono text-xs"
               />
-            </div>
-          </div>
+            </FormField>
+          </Section>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="rule-decision">Decision</Label>
-              <Select
-                value={decision}
-                onValueChange={(v) =>
-                  setDecision(v as 'allow' | 'deny' | 'escalate' | 'simulate_only')
-                }
-              >
-                <SelectTrigger id="rule-decision" className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="allow">allow</SelectItem>
-                  <SelectItem value="deny">deny</SelectItem>
-                  <SelectItem value="escalate">escalate</SelectItem>
-                  <SelectItem value="simulate_only">simulate_only</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="rule-scope">Scope</Label>
-              <Input
-                id="rule-scope"
-                value={scope}
-                onChange={(e) => setScope(e.target.value)}
-                placeholder="changes / access / incidents / global"
+          {/* Agent context block */}
+          <Section
+            title="Agent context"
+            subtitle="Free-form prose fed verbatim to skill prompts. Helps agents reason about WHY a rule exists, not just what it forbids."
+          >
+            <FormField
+              label="Rationale"
+              htmlFor="rule-rationale"
+              hint="Why does this rule exist? Agents quote this when explaining enforcement to humans."
+            >
+              <Textarea
+                id="rule-rationale"
+                value={rationale}
+                onChange={(e) => setRationale(e.target.value)}
+                placeholder="We've had 3 weekend incidents from Friday deploys in last quarter. Rule prevents repeat exposure during low-staffed windows."
+                rows={4}
+                className="min-h-[110px] text-sm"
               />
-            </div>
-          </div>
+            </FormField>
 
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="rule-desc">Description</Label>
-            <Textarea
-              id="rule-desc"
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              placeholder="What does this rule enforce?"
-              rows={2}
-            />
-          </div>
+            <FormField
+              label="Examples"
+              htmlFor="rule-examples"
+              hint="Concrete past enforcement, one per line. Agents pattern-match new candidates against these."
+            >
+              <Textarea
+                id="rule-examples"
+                value={examplesText}
+                onChange={(e) => setExamplesText(e.target.value)}
+                placeholder={'CHG-1234 was auto-approved because risk=low and CI passed.\nCHG-5678 was denied because rollback plan missing.'}
+                rows={4}
+                className="min-h-[110px] text-sm"
+              />
+            </FormField>
 
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="rule-rationale">Rationale (why does this rule exist?)</Label>
-            <Textarea
-              id="rule-rationale"
-              value={rationale}
-              onChange={(e) => setRationale(e.target.value)}
-              placeholder="Fed verbatim to agents so they can explain enforcement during triage."
-              rows={3}
-            />
-          </div>
+            <FormField label="Tags" htmlFor="rule-tags" hint="Comma-separated. Used for filtering on the Policies page.">
+              <Input
+                id="rule-tags"
+                value={tagsText}
+                onChange={(e) => setTagsText(e.target.value)}
+                placeholder="security, prod, auto-approve"
+                className="h-11"
+              />
+            </FormField>
+          </Section>
 
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="rule-applies">Applies to (one per line)</Label>
-            <Textarea
-              id="rule-applies"
-              value={appliesToText}
-              onChange={(e) => setAppliesToText(e.target.value)}
-              placeholder={'service:payment\nservice:orders'}
-              rows={3}
-              className="font-mono text-xs"
-            />
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="rule-examples">Examples (one per line)</Label>
-            <Textarea
-              id="rule-examples"
-              value={examplesText}
-              onChange={(e) => setExamplesText(e.target.value)}
-              placeholder={'CHG-1234 was auto-approved because risk=low and CI passed.\nCHG-5678 was denied because rollback plan missing.'}
-              rows={3}
-            />
-          </div>
-
-          <div className="flex flex-col gap-1.5">
-            <Label htmlFor="rule-tags">Tags (comma separated)</Label>
-            <Input
-              id="rule-tags"
-              value={tagsText}
-              onChange={(e) => setTagsText(e.target.value)}
-              placeholder="security, prod, auto-approve"
-            />
-          </div>
-
-          <label className="flex items-center gap-2 text-sm text-foreground/85 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={isActive}
-              onChange={(e) => setIsActive(e.target.checked)}
-              className="h-4 w-4 rounded border-border"
-            />
-            Active (feed to agent context)
-          </label>
+          {/* Activation */}
+          <Section title="Activation">
+            <label className="flex items-center gap-3 rounded-md border border-border bg-secondary/40 px-4 py-3 cursor-pointer hover:border-primary/40 transition-colors">
+              <input
+                type="checkbox"
+                checked={isActive}
+                onChange={(e) => setIsActive(e.target.checked)}
+                className="h-4 w-4 rounded border-border accent-primary"
+              />
+              <div className="flex flex-col gap-0.5">
+                <span className="text-sm font-medium text-foreground">
+                  Active (feed to agent context)
+                </span>
+                <span className="text-xs text-muted-foreground">
+                  Inactive rules stay in DB but are excluded from agent skill prompts.
+                </span>
+              </div>
+            </label>
+          </Section>
 
           {error && (
-            <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+            <div className="rounded-md border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive">
               {error}
             </div>
           )}
         </div>
 
-        <DialogFooter>
-          <Button variant="ghost" onClick={onClose}>
+        <DialogFooter
+          className="border-t border-border bg-card sticky bottom-0"
+          style={{ padding: '1rem 2.5rem 1.5rem 2.5rem' }}
+        >
+          <Button variant="ghost" size="lg" onClick={onClose}>
             Cancel
           </Button>
-          <Button onClick={handleSubmit} disabled={!valid || isPending}>
+          <Button size="lg" onClick={handleSubmit} disabled={!valid || isPending}>
             {isPending ? 'Saving…' : editing ? 'Save changes' : 'Create rule'}
           </Button>
         </DialogFooter>
@@ -885,6 +929,52 @@ function SectionList({
           </li>
         ))}
       </ul>
+    </div>
+  )
+}
+
+// ─── Form helpers ───────────────────────────────────────
+
+function Section({
+  title,
+  subtitle,
+  children,
+}: {
+  title: string
+  subtitle?: string
+  children: React.ReactNode
+}) {
+  return (
+    <section className="flex flex-col gap-4">
+      <div className="flex flex-col gap-1">
+        <h4 className="text-sm font-semibold text-foreground">{title}</h4>
+        {subtitle && (
+          <p className="text-xs text-muted-foreground leading-relaxed">{subtitle}</p>
+        )}
+      </div>
+      <div className="flex flex-col gap-5">{children}</div>
+    </section>
+  )
+}
+
+function FormField({
+  label,
+  htmlFor,
+  hint,
+  children,
+}: {
+  label: string
+  htmlFor: string
+  hint?: string
+  children: React.ReactNode
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      <Label htmlFor={htmlFor} className="text-sm font-medium">
+        {label}
+      </Label>
+      {children}
+      {hint && <p className="text-xs text-muted-foreground leading-relaxed">{hint}</p>}
     </div>
   )
 }

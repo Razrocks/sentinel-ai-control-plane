@@ -208,6 +208,19 @@ export const api = {
     )
   },
 
+  // Chat history persistence (cross-device)
+  getChatHistory: (sessionId: string, limit = 200) =>
+    apiFetch<{
+      sessionId: string
+      messages: Array<{
+        id: string
+        role: 'user' | 'assistant'
+        content: string
+        type: string
+        timestamp: string
+      }>
+    }>(`/chat/messages?sessionId=${encodeURIComponent(sessionId)}&limit=${limit}`),
+
   // Policies
   getPolicies: (filters?: Record<string, string>) => {
     const params = filters ? '?' + new URLSearchParams(filters).toString() : ''

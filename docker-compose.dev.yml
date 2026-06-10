@@ -1,0 +1,24 @@
+# Dev-mode overlay for docker-compose.
+#
+# Mounts the backend source directory into the container so TypeScript
+# edits hot-reload via `tsx watch` — no rebuild, no `docker cp` dance.
+# Apply with `docker compose -f docker-compose.yml -f docker-compose.dev.yml up`
+# or use the convenience script `npm run docker:dev` (added in package.json).
+#
+# Stays separate from the main compose so production-style builds (just
+# `docker compose up`) remain reproducible from the dist artifact.
+services:
+  backend:
+    # node_modules left in-container; we only mount source + prisma so we
+    # never trample the installed deps. /app/dist is also excluded as an
+    # anonymous volume so the host's stale dist doesn't override tsx output.
+    volumes:
+      - ./backend/src:/app/src
+      - ./backend/prisma:/app/prisma
+      - ./backend/tsconfig.json:/app/tsconfig.json
+      - /app/node_modules
+      - /app/dist
+    environment:
+      NODE_ENV: development
+    # Override the production `node dist/server.js` start with the watch script.
+    command: npx tsx watch src/server.ts

@@ -236,6 +236,68 @@ export async function chatRoutes(app: FastifyInstance) {
       reply.raw.end()
     }
   })
+
+  /**
+   * GET /api/chat/messages?sessionId=...&limit=200
+   *
+   * Returns the calling user's chat history for a specific session, oldest
+   * first so the frontend can render as-is. Scoped by `userId` so users only
+   * see their own messages (privacy + multi-tenant safety).
+   *
+   * Used for cross-device chat persistence: when the user opens the app on a
+   * fresh browser, we hit this to rehydrate the conversation instead of
+   * relying solely on localStorage (which is per-browser).
+   */
+  app.get(
+    '/api/chat/messages',
+    { preHandler: [requireAuth] },
+    async (request, reply) => {
+      const { sessionId, limit } = request.query as {
+        sessionId?: string
+        limit?: string
+      }
+      if (!sessionId) {
+        return reply.code(400).send({
+          error: 'VALIDATION_ERROR',
+          message: 'sessionId query param is required',
+        })
+      }
+      const userId = request.user!.userId
+      const cap = Math.min(Number(limit) || 200, 500)
+
+      const rows = await prisma.chatMessage.findMany({
+        where: { userId, sessionId },
+        orderBy: { createdAt: 'asc' },
+        take: cap,
+        select: {
+          id: true,
+          role: true,
+          content: true,
+          contextJson: true,
+          createdAt: true,
+        },
+      })
+
+      return reply.send({
+        sessionId,
+        messages: rows.map((r) => ({
+          id: r.id,
+          role: r.role,
+          content: r.content,
+          type: (() => {
+            try {
+              if (!r.contextJson) return 'text'
+              const ctx = JSON.parse(r.contextJson) as { type?: string }
+              return ctx.type ?? 'text'
+            } catch {
+              return 'text'
+            }
+          })(),
+          timestamp: r.createdAt.toISOString(),
+        })),
+      })
+    },
+  )
 }
 
 // ─── Entity data loaders ────────────────────────────────

@@ -21,7 +21,8 @@ import {
   Loader2,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
-import { chatStream } from '@/lib/api'
+import { chatStream, api } from '@/lib/api'
+import { useAuth } from '@/lib/auth'
 import { useRole, type Role } from '@/lib/roles'
 
 type MessageType =
@@ -240,20 +241,31 @@ const resultDecisionStyles: Record<string, { bg: string; text: string; icon: typ
 export function ChatPanel() {
   const [isExpanded, setIsExpanded] = useState(false)
   const [fullscreen, setFullscreen] = useState(false)
-  const [messages, setMessages] = useState<Message[]>([])
+  // Persist global chat to localStorage. Per-role key so switching role
+  // doesn't bleed conversation context across personas, but stays alive
+  // across page reloads + browser sessions until cleared.
+  const messagesKey = `sentinel.chat.global.messages`
+  const [messages, setMessages] = useState<Message[]>(() => {
+    try {
+      const raw = localStorage.getItem(messagesKey)
+      if (!raw) return []
+      const parsed = JSON.parse(raw) as Message[]
+      return Array.isArray(parsed) ? parsed : []
+    } catch {
+      return []
+    }
+  })
   const [input, setInput] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
-  // Stable session id per browser tab; backend uses this to group cross-session memory.
-  const [sessionId] = useState(() => {
-    const k = 'sentinel.chat.global.sessionId'
-    let v = sessionStorage.getItem(k)
-    if (!v) {
-      v = `chat-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`
-      sessionStorage.setItem(k, v)
-    }
-    return v
-  })
+  // Deterministic session id. Backend filters by userId, so the same global
+  // key on every device for the same logged-in user surfaces the same
+  // conversation. Per-browser random IDs would isolate history per browser.
+  const [sessionId] = useState(() => `global`)
   const { role, config } = useRole()
+  // Hydration depends on auth being ready — otherwise the fetch goes out
+  // without a Bearer token, 401s, and silently fails forever (the catch
+  // swallows it). Re-run when auth flips to authenticated.
+  const { isAuthenticated } = useAuth()
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
   const abortRef = useRef<AbortController | null>(null)
@@ -276,12 +288,49 @@ export function ChatPanel() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
+  // Role change should NOT wipe history — user wants persistence regardless.
+  // We still abort any in-flight stream so we don't keep talking under the
+  // old role's guardrails after the swap, but messages stay intact.
   useEffect(() => {
-    setMessages([])
-    // Abort any in-flight stream on role change
     abortRef.current?.abort()
     setIsStreaming(false)
   }, [role])
+
+  // Write-through to localStorage on every messages change. Last 200 only.
+  useEffect(() => {
+    try {
+      const trimmed = messages.slice(-200)
+      localStorage.setItem(messagesKey, JSON.stringify(trimmed))
+    } catch {
+      /* storage quota or disabled */
+    }
+  }, [messages, messagesKey])
+
+  // Backend rehydration. Gated on `isAuthenticated` so we don't fire the
+  // GET before login completes (would 401 + silently fail). Re-runs when
+  // auth flips to true (eg after fresh login in a new browser).
+  useEffect(() => {
+    if (!isAuthenticated) return
+    let cancelled = false
+    api
+      .getChatHistory(sessionId, 200)
+      .then((res) => {
+        if (cancelled || res.messages.length === 0) return
+        const serverMsgs: Message[] = res.messages.map((m) => ({
+          id: m.id,
+          role: m.role,
+          content: m.content,
+          type: (m.type as MessageType) ?? 'text',
+        }))
+        setMessages((local) => (serverMsgs.length > local.length ? serverMsgs : local))
+      })
+      .catch(() => {
+        /* offline / 401 → keep localStorage */
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [sessionId, isAuthenticated])
 
   const sendMessage = async (text: string) => {
     if (!text.trim() || isStreaming) return

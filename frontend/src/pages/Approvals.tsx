@@ -111,6 +111,17 @@ export default function Approvals() {
   const [escalateModal, setEscalateModal] = useState<Approval | null>(null)
   const [escalateReason, setEscalateReason] = useState('')
   const [expandedImpact, setExpandedImpact] = useState<string | null>(null)
+  // Track which pending approvals are expanded to full-card view. Compact-by-default
+  // prevents the inbox from feeling like a wall of giant cards. First urgent item
+  // auto-opens so users don't always have to click into something.
+  const [expandedPending, setExpandedPending] = useState<Set<string>>(new Set())
+  const togglePendingExpand = (id: string) =>
+    setExpandedPending((s) => {
+      const n = new Set(s)
+      if (n.has(id)) n.delete(id)
+      else n.add(id)
+      return n
+    })
   const { role, canAction, getActionPermission } = useRole()
 
   const isApproverRole =
@@ -349,25 +360,58 @@ export default function Approvals() {
 
       {!isLoading && pending.length > 0 && (
         <section className="flex flex-col gap-4">
-          <SectionLabel>Pending · {pending.length}</SectionLabel>
-          <div className="flex flex-col gap-4">
-            {pending.map((approval) => (
-              <PendingApprovalCard
-                key={approval.id}
-                approval={approval}
-                isApproverRole={isApproverRole}
-                canAction={canAction}
-                expandedImpact={expandedImpact === approval.id}
-                onToggleImpact={() =>
-                  setExpandedImpact(expandedImpact === approval.id ? null : approval.id)
-                }
-                onApprove={() => handleApprove(approval)}
-                onApproveWithCondition={() => handleApproveWithCondition(approval)}
-                onDeny={() => handleDeny(approval)}
-                onAddNote={() => handleAddNote(approval)}
-                onEscalate={() => handleEscalate(approval)}
-              />
-            ))}
+          <div className="flex items-center justify-between">
+            <SectionLabel>Pending · {pending.length}</SectionLabel>
+            {pending.length > 1 && (
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="text-xs text-muted-foreground hover:text-foreground"
+                  onClick={() =>
+                    setExpandedPending(new Set(pending.map((p) => p.id)))
+                  }
+                >
+                  Expand all
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="text-xs text-muted-foreground hover:text-foreground"
+                  onClick={() => setExpandedPending(new Set())}
+                >
+                  Collapse all
+                </Button>
+              </div>
+            )}
+          </div>
+          <div className="flex flex-col gap-3">
+            {pending.map((approval) =>
+              expandedPending.has(approval.id) ? (
+                <PendingApprovalCard
+                  key={approval.id}
+                  approval={approval}
+                  isApproverRole={isApproverRole}
+                  canAction={canAction}
+                  expandedImpact={expandedImpact === approval.id}
+                  onToggleImpact={() =>
+                    setExpandedImpact(expandedImpact === approval.id ? null : approval.id)
+                  }
+                  onApprove={() => handleApprove(approval)}
+                  onApproveWithCondition={() => handleApproveWithCondition(approval)}
+                  onDeny={() => handleDeny(approval)}
+                  onAddNote={() => handleAddNote(approval)}
+                  onEscalate={() => handleEscalate(approval)}
+                  onCollapse={() => togglePendingExpand(approval.id)}
+                />
+              ) : (
+                <PendingMiniRow
+                  key={approval.id}
+                  approval={approval}
+                  onExpand={() => togglePendingExpand(approval.id)}
+                />
+              ),
+            )}
           </div>
         </section>
       )}
@@ -571,6 +615,7 @@ interface PendingCardProps {
   onDeny: () => void
   onAddNote: () => void
   onEscalate: () => void
+  onCollapse?: () => void
 }
 
 function PendingApprovalCard({
@@ -584,6 +629,7 @@ function PendingApprovalCard({
   onDeny,
   onAddNote,
   onEscalate,
+  onCollapse,
 }: PendingCardProps) {
   const risk = riskTone(approval.riskLevel)
   const canApprove = canAction('approve')
@@ -629,9 +675,22 @@ function PendingApprovalCard({
           </code>
         </CardDescription>
         <CardAction>
-          <span className="text-xs text-muted-foreground whitespace-nowrap">
-            Submitted {timeAgo(approval.createdAt)}
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground whitespace-nowrap">
+              Submitted {timeAgo(approval.createdAt)}
+            </span>
+            {onCollapse && (
+              <Button
+                size="icon"
+                variant="ghost"
+                onClick={onCollapse}
+                className="h-7 w-7 text-muted-foreground hover:text-foreground"
+                aria-label="Collapse"
+              >
+                <ChevronDown className="h-4 w-4 rotate-180" />
+              </Button>
+            )}
+          </div>
         </CardAction>
       </CardHeader>
 
@@ -957,6 +1016,71 @@ function ImpactRow({
 }
 
 // ─── Resolved row ───────────────────────────────────────
+
+/**
+ * Compact one-line representation of a pending approval. Default state for
+ * the inbox so it scans like a list, not a wall of giant cards. Clicking
+ * anywhere on the row expands to the full PendingApprovalCard via parent
+ * state, with action buttons + all context blocks.
+ */
+function PendingMiniRow({
+  approval,
+  onExpand,
+}: {
+  approval: Approval
+  onExpand: () => void
+}) {
+  const risk = riskTone(approval.riskLevel)
+  return (
+    <button
+      type="button"
+      onClick={onExpand}
+      className={cn(
+        'group flex items-center gap-4 w-full rounded-lg border bg-card text-left transition-colors hover:border-primary/40 hover:bg-card/90 relative overflow-hidden',
+        'before:absolute before:top-0 before:bottom-0 before:left-0 before:w-1 before:content-[""]',
+        urgencyRail(approval),
+      )}
+      style={{ padding: '0.875rem 1.25rem 0.875rem 1.5rem' }}
+    >
+      <span
+        className={cn(
+          'flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider flex-shrink-0',
+          risk.text,
+        )}
+      >
+        <span className={cn('h-1.5 w-1.5 rounded-full', risk.dot)} />
+        {risk.label} RISK
+      </span>
+      <span className="hidden md:inline text-muted-foreground/50">·</span>
+      <span className="hidden md:inline text-xs font-medium uppercase tracking-wider text-muted-foreground flex-shrink-0">
+        {typeLabels[approval.type]}
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="text-sm font-medium text-foreground truncate">{approval.title}</div>
+        <div className="text-xs text-muted-foreground truncate mt-0.5">
+          {approval.requester} · <code className="rounded bg-muted px-1 py-0.5 font-mono">{approval.impactedSystem}</code> · {timeAgo(approval.createdAt)}
+        </div>
+      </div>
+      {approval.coApprovals && approval.coApprovals.length > 0 && (() => {
+        const done = approval.coApprovals.filter((c) => c.status === 'approved').length
+        const total = approval.coApprovals.length
+        return (
+          <div className="hidden lg:flex items-center gap-2 flex-shrink-0">
+            <Users className="h-3.5 w-3.5 text-muted-foreground" />
+            <span className="text-xs tabular-nums text-muted-foreground">
+              {done}/{total}
+            </span>
+          </div>
+        )
+      })()}
+      <Badge variant="warning" className="flex-shrink-0">
+        <Clock className="h-3 w-3" />
+        Pending
+      </Badge>
+      <ChevronDown className="h-4 w-4 text-muted-foreground flex-shrink-0 transition-transform group-hover:text-foreground" />
+    </button>
+  )
+}
 
 function ResolvedRow({ approval }: { approval: Approval }) {
   const Icon =

@@ -1,12 +1,9 @@
 /**
- * Sidebar — vertical nav, dark only, larger touch targets.
+ * Sidebar — vertical left nav. Simple fixed-width design.
  *
- * Phase 4 design:
- *   - Width 15rem (was 13rem) — more breathing room for labels
- *   - Items h-10 with text-sm font-medium — readable, click-friendly
- *   - Active state uses primary fill, not just text colour
- *   - Sections grouped: Workflow / Governance / System
- *   - Approval count badge larger + always visible when > 0
+ * Keeps the look of the previous (working) sidebar but uses the new
+ * theme tokens (sidebar-foreground, sidebar-primary, etc.) and the
+ * Badge primitive for the approval count.
  */
 import { NavLink } from 'react-router-dom'
 import {
@@ -23,7 +20,6 @@ import {
 import { cn } from '@/lib/utils'
 import { useRole } from '@/lib/roles'
 import { Badge } from '@/components/ui/badge'
-import { Separator } from '@/components/ui/separator'
 
 interface SidebarProps {
   approvalCount: number
@@ -76,67 +72,63 @@ export function Sidebar({ approvalCount }: SidebarProps) {
 
   return (
     <aside
-      className="fixed inset-y-0 left-0 z-30 flex flex-col bg-card border-r border-border"
+      className="fixed inset-y-0 left-0 z-30 flex flex-col border-r border-sidebar-border bg-sidebar"
       style={{ width: '15rem' }}
     >
       {/* Brand */}
-      <div className="flex h-16 items-center px-5 border-b border-border">
-        <div className="flex items-center gap-2.5">
-          <div className="h-8 w-8 rounded-md bg-primary flex items-center justify-center">
-            <Shield className="h-4 w-4 text-primary-foreground" />
-          </div>
-          <span className="text-base font-semibold text-foreground tracking-tight">Sentinel</span>
+      <div className="flex h-16 items-center gap-2.5 border-b border-sidebar-border px-5">
+        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-sidebar-primary text-sidebar-primary-foreground flex-shrink-0">
+          <Shield className="h-4 w-4" />
         </div>
+        <span className="font-heading text-base font-semibold text-sidebar-foreground tracking-tight">
+          Sentinel
+        </span>
       </div>
 
-      {/* Nav groups */}
-      <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-5">
+      {/* Nav */}
+      <nav className="flex-1 overflow-y-auto px-3 py-4 flex flex-col gap-5">
         {navGroups.map((group) => {
           const visible = group.items.filter((item) => canAccess(item.to))
           if (visible.length === 0) return null
           return (
-            <div key={group.label}>
-              <div className="px-2.5 mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <div key={group.label} className="flex flex-col gap-1">
+              <div className="px-2.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
                 {group.label}
               </div>
-              <div className="space-y-0.5">
-                {visible.map((item) => (
-                  <NavLink
-                    key={item.to}
-                    to={item.to}
-                    end={item.to === '/'}
-                    className={({ isActive }) =>
-                      cn(
-                        'flex h-10 items-center gap-3 rounded-md px-3 text-sm font-medium transition-colors',
-                        isActive
-                          ? 'bg-primary text-primary-foreground'
-                          : 'text-muted-foreground hover:bg-secondary hover:text-foreground',
-                      )
-                    }
-                  >
-                    <item.icon className="h-4 w-4 shrink-0" />
-                    <span className="flex-1 truncate">{item.label}</span>
-                    {item.hasBadge && approvalCount > 0 && (
-                      <Badge variant="default" className="h-5 min-w-5 px-1.5 text-[10px]">
-                        {approvalCount}
-                      </Badge>
-                    )}
-                  </NavLink>
-                ))}
-              </div>
+              {visible.map((item) => (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  end={item.to === '/'}
+                  className={({ isActive }) =>
+                    cn(
+                      'flex h-9 items-center gap-3 rounded-md px-3 text-sm font-medium transition-colors',
+                      isActive
+                        ? 'bg-sidebar-primary text-sidebar-primary-foreground'
+                        : 'text-muted-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground',
+                    )
+                  }
+                >
+                  <item.icon className="h-4 w-4 shrink-0" />
+                  <span className="flex-1 truncate">{item.label}</span>
+                  {item.hasBadge && approvalCount > 0 && (
+                    <Badge variant="default" className="h-5 min-w-5 px-1.5 text-[10px]">
+                      {approvalCount}
+                    </Badge>
+                  )}
+                </NavLink>
+              ))}
             </div>
           )
         })}
       </nav>
 
-      <Separator />
-
-      {/* Role footer */}
-      <div className="px-5 py-3">
-        <div className="text-[10px] text-muted-foreground uppercase tracking-wider">
+      {/* Footer — current role */}
+      <div className="border-t border-sidebar-border px-5 py-3">
+        <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
           Current role
         </div>
-        <div className="text-sm font-medium text-foreground">{config.label}</div>
+        <div className="text-sm font-medium text-sidebar-foreground">{config.label}</div>
       </div>
     </aside>
   )

@@ -56,6 +56,18 @@ export function renderT1bPolicyBundle(bundle: T1bPolicyBundle): string {
     lines.push('Rules:')
     for (const r of bundle.rules) {
       lines.push(`- ${r.name} (${r.bundle}, scope=${r.scope}, decision=${r.decision}): ${r.description}`)
+      if (r.rationale) {
+        lines.push(`  rationale: ${r.rationale}`)
+      }
+      if (r.examples && r.examples.length > 0) {
+        lines.push(`  examples:`)
+        for (const ex of r.examples) {
+          lines.push(`    - ${ex}`)
+        }
+      }
+      if (r.tags && r.tags.length > 0) {
+        lines.push(`  tags: ${r.tags.join(', ')}`)
+      }
     }
   }
 

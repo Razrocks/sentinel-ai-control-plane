@@ -15,7 +15,15 @@ import {
   Zap,
   FileText,
   ArrowUpRight,
+  Search,
+  Plus,
+  Pencil,
+  Trash2,
+  Power,
+  Tag,
+  Lightbulb,
 } from 'lucide-react'
+import { Input } from '@/components/ui/input'
 import { usePolicies, useAuditEvents } from '@/hooks/useData'
 import { timeAgo, cn } from '@/lib/utils'
 import { useRole } from '@/lib/roles'
@@ -23,6 +31,31 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Button } from '@/components/ui/button'
+import { Textarea } from '@/components/ui/textarea'
+import { Label } from '@/components/ui/label'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
+  useCreatePolicyRule,
+  useUpdatePolicyRule,
+  useDeletePolicyRule,
+} from '@/hooks/useMutations'
+import type { PolicyRule, PolicyRuleInput } from '@/types'
+import { ActionGuardModal } from '@/components/shared'
 
 // Enriched policy metadata (mock).
 const policyMeta: Record<
@@ -111,10 +144,24 @@ function decisionBadge(decision: string) {
 
 export default function Policies() {
   const [selectedRule, setSelectedRule] = useState<string | null>(null)
-  const { role: _role } = useRole()
+  const [query, setQuery] = useState('')
+  const { role } = useRole()
+  const isAdmin = role === 'admin'
   const { data: policyRules = [], isLoading: loadingPolicies } = usePolicies()
   const { data: auditEvents = [] } = useAuditEvents()
   const activeRules = policyRules.filter((r) => r.isActive)
+
+  const createRule = useCreatePolicyRule()
+  const updateRule = useUpdatePolicyRule()
+  const deleteRule = useDeletePolicyRule()
+
+  // Form state for create/edit dialog. `mode === 'edit'` carries the rule
+  // id + version so PATCH can do optimistic concurrency.
+  const [dialogMode, setDialogMode] = useState<
+    { type: 'closed' } | { type: 'create' } | { type: 'edit'; rule: PolicyRule }
+  >({ type: 'closed' })
+  const [deleteConfirm, setDeleteConfirm] = useState<PolicyRule | null>(null)
+  const [mutationError, setMutationError] = useState<string | null>(null)
 
   const selected = policyRules.find((r) => r.id === selectedRule)
   const meta = selected ? policyMeta[selected.id] : null
@@ -123,12 +170,29 @@ export default function Policies() {
     : []
 
   return (
-    <div className="space-y-12">
-      <div className="mb-6">
-        <h1 className="text-3xl font-semibold text-foreground tracking-tight">Policies</h1>
-        <p className="text-base text-muted-foreground mt-4">
-          Active guardrails and policy rules
-        </p>
+    <div className="flex flex-col gap-10">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="flex flex-col gap-3">
+          <h1 className="font-heading text-3xl font-medium tracking-tight text-foreground">
+            Policies
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            Active guardrails and policy rules. Changes apply to agent context on the
+            next skill invocation.
+          </p>
+        </div>
+        {isAdmin && (
+          <Button
+            size="lg"
+            onClick={() => {
+              setMutationError(null)
+              setDialogMode({ type: 'create' })
+            }}
+          >
+            <Plus />
+            New rule
+          </Button>
+        )}
       </div>
 
       {/* Summary tiles */}
@@ -157,11 +221,33 @@ export default function Policies() {
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_460px] gap-6">
           {/* Rules list */}
           <Card>
-            <CardHeader className="py-4 border-b border-border">
+            <CardHeader className="px-5 py-4 border-b border-border flex-row items-center justify-between space-y-0">
               <CardTitle className="text-base">Policy Rules</CardTitle>
+              <div className="relative w-64">
+                <Search
+                  className="pointer-events-none absolute top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground"
+                  style={{ left: '0.75rem' }}
+                />
+                <Input
+                  type="search"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="Filter rules..."
+                  style={{ height: '2.25rem', paddingLeft: '2.25rem', paddingRight: '0.75rem' }}
+                />
+              </div>
             </CardHeader>
             <CardContent className="p-0 divide-y divide-border">
-              {policyRules.map((rule) => {
+              {policyRules.filter((rule) => {
+                const q = query.trim().toLowerCase()
+                if (!q) return true
+                return (
+                  rule.name.toLowerCase().includes(q) ||
+                  rule.bundle.toLowerCase().includes(q) ||
+                  rule.scope.toLowerCase().includes(q) ||
+                  rule.description.toLowerCase().includes(q)
+                )
+              }).map((rule) => {
                 const b = decisionBadge(rule.decision)
                 const isSelected = selectedRule === rule.id
                 return (
@@ -230,6 +316,85 @@ export default function Policies() {
                       {selected.isActive ? 'Active' : 'Inactive'}
                     </span>
                   </div>
+
+                  {isAdmin && (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setMutationError(null)
+                          setDialogMode({ type: 'edit', rule: selected })
+                        }}
+                      >
+                        <Pencil className="h-3.5 w-3.5" /> Edit
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={updateRule.isPending}
+                        onClick={() => {
+                          updateRule.mutate({
+                            id: selected.id,
+                            isActive: !selected.isActive,
+                            expectedVersion: selected.version,
+                          })
+                        }}
+                      >
+                        <Power className="h-3.5 w-3.5" />
+                        {selected.isActive ? 'Disable' : 'Enable'}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="ml-auto text-destructive border-destructive/40 hover:bg-destructive/10 hover:text-destructive"
+                        onClick={() => setDeleteConfirm(selected)}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" /> Delete
+                      </Button>
+                    </div>
+                  )}
+
+                  {selected.rationale && (
+                    <div className="rounded-md border border-primary/30 bg-primary/5 p-3 space-y-1">
+                      <div className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-primary">
+                        <Lightbulb className="h-3 w-3" /> Rationale
+                      </div>
+                      <p className="text-sm text-foreground/85 leading-relaxed">
+                        {selected.rationale}
+                      </p>
+                    </div>
+                  )}
+
+                  {selected.tags && selected.tags.length > 0 && (
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <Tag className="h-3 w-3 text-muted-foreground" />
+                      {selected.tags.map((t) => (
+                        <Badge key={t} variant="secondary" className="text-xs">
+                          {t}
+                        </Badge>
+                      ))}
+                    </div>
+                  )}
+
+                  {selected.examples && selected.examples.length > 0 && (
+                    <div className="space-y-1.5">
+                      <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                        Examples
+                      </div>
+                      <ul className="flex flex-col gap-1.5">
+                        {selected.examples.map((ex, i) => (
+                          <li
+                            key={i}
+                            className="flex items-start gap-2 rounded-md bg-secondary px-3 py-2 text-sm text-foreground/85 leading-relaxed"
+                          >
+                            <span className="mt-0.5 h-1.5 w-1.5 rounded-full bg-primary flex-shrink-0" />
+                            <span>{ex}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
 
                   <p className="text-sm text-foreground/85 leading-relaxed">
                     {selected.description}
@@ -380,16 +545,306 @@ export default function Policies() {
           </div>
         </div>
       )}
+
+      {/* Create/Edit dialog */}
+      <PolicyRuleDialog
+        mode={dialogMode}
+        onClose={() => {
+          setDialogMode({ type: 'closed' })
+          setMutationError(null)
+        }}
+        onSubmit={(input) => {
+          setMutationError(null)
+          if (dialogMode.type === 'create') {
+            createRule.mutate(input, {
+              onSuccess: () => setDialogMode({ type: 'closed' }),
+              onError: (err) => setMutationError(err.message),
+            })
+          } else if (dialogMode.type === 'edit') {
+            updateRule.mutate(
+              { id: dialogMode.rule.id, ...input, expectedVersion: dialogMode.rule.version },
+              {
+                onSuccess: () => setDialogMode({ type: 'closed' }),
+                onError: (err) => setMutationError(err.message),
+              },
+            )
+          }
+        }}
+        error={mutationError}
+        isPending={createRule.isPending || updateRule.isPending}
+      />
+
+      {/* Delete confirmation */}
+      {deleteConfirm && (
+        <ActionGuardModal
+          isOpen
+          title={`Disable policy rule: ${deleteConfirm.name}?`}
+          description={`This soft-disables the rule (isActive=false). Agents will stop receiving it on the next skill invocation. The audit history is preserved. To hard-delete, use the API directly.`}
+          confirmLabel="Disable rule"
+          variant="warning"
+          onConfirm={() => {
+            deleteRule.mutate(
+              { id: deleteConfirm.id, hard: false },
+              { onSuccess: () => setDeleteConfirm(null) },
+            )
+          }}
+          onCancel={() => setDeleteConfirm(null)}
+        />
+      )}
     </div>
+  )
+}
+
+// ─── Create/Edit Dialog ─────────────────────────────────
+
+interface DialogProps {
+  mode:
+    | { type: 'closed' }
+    | { type: 'create' }
+    | { type: 'edit'; rule: PolicyRule }
+  onClose: () => void
+  onSubmit: (input: PolicyRuleInput) => void
+  error: string | null
+  isPending: boolean
+}
+
+function PolicyRuleDialog({ mode, onClose, onSubmit, error, isPending }: DialogProps) {
+  const open = mode.type !== 'closed'
+  const editing = mode.type === 'edit' ? mode.rule : null
+
+  const [name, setName] = useState('')
+  const [description, setDescription] = useState('')
+  const [bundle, setBundle] = useState('')
+  const [decision, setDecision] = useState<'allow' | 'deny' | 'escalate' | 'simulate_only'>('allow')
+  const [scope, setScope] = useState('')
+  const [appliesToText, setAppliesToText] = useState('')
+  const [rationale, setRationale] = useState('')
+  const [examplesText, setExamplesText] = useState('')
+  const [tagsText, setTagsText] = useState('')
+  const [isActive, setIsActive] = useState(true)
+
+  // Hydrate form when dialog opens or switches mode.
+  // Using a key on the dialog could replace this — but plain hydration on
+  // open avoids remount flicker for the modal.
+  const hydrateKey = `${mode.type}:${editing?.id ?? 'new'}`
+  const [lastKey, setLastKey] = useState<string>('')
+  if (open && hydrateKey !== lastKey) {
+    setLastKey(hydrateKey)
+    setName(editing?.name ?? '')
+    setDescription(editing?.description ?? '')
+    setBundle(editing?.bundle ?? '')
+    setDecision((editing?.decision as 'allow' | 'deny' | 'escalate' | 'simulate_only') ?? 'allow')
+    setScope(editing?.scope ?? '')
+    setAppliesToText((editing?.appliesTo ?? []).join('\n'))
+    setRationale(editing?.rationale ?? '')
+    setExamplesText((editing?.examples ?? []).join('\n'))
+    setTagsText((editing?.tags ?? []).join(', '))
+    setIsActive(editing?.isActive ?? true)
+  }
+
+  const handleSubmit = () => {
+    const appliesTo = appliesToText
+      .split('\n')
+      .map((s) => s.trim())
+      .filter(Boolean)
+    const examples = examplesText
+      .split('\n')
+      .map((s) => s.trim())
+      .filter(Boolean)
+    const tags = tagsText
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
+
+    onSubmit({
+      name: name.trim(),
+      description: description.trim(),
+      bundle: bundle.trim(),
+      decision,
+      scope: scope.trim(),
+      appliesTo,
+      isActive,
+      rationale: rationale.trim() || null,
+      examples,
+      tags,
+    })
+  }
+
+  const valid =
+    name.trim() &&
+    description.trim() &&
+    bundle.trim() &&
+    scope.trim()
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={(o) => {
+        if (!o) onClose()
+      }}
+    >
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Shield className="h-5 w-5 text-primary" />
+            {editing ? 'Edit policy rule' : 'New policy rule'}
+          </DialogTitle>
+          <DialogDescription>
+            {editing
+              ? 'Update the rule. Agents pick up changes on the next skill invocation.'
+              : 'Define a new policy rule. Active rules feed into agent context immediately.'}
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="flex flex-col gap-4">
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="rule-name">Name</Label>
+              <Input
+                id="rule-name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="auto_approve_low_risk"
+                disabled={!!editing}
+              />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="rule-bundle">Bundle</Label>
+              <Input
+                id="rule-bundle"
+                value={bundle}
+                onChange={(e) => setBundle(e.target.value)}
+                placeholder="default"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="rule-decision">Decision</Label>
+              <Select
+                value={decision}
+                onValueChange={(v) =>
+                  setDecision(v as 'allow' | 'deny' | 'escalate' | 'simulate_only')
+                }
+              >
+                <SelectTrigger id="rule-decision" className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="allow">allow</SelectItem>
+                  <SelectItem value="deny">deny</SelectItem>
+                  <SelectItem value="escalate">escalate</SelectItem>
+                  <SelectItem value="simulate_only">simulate_only</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="rule-scope">Scope</Label>
+              <Input
+                id="rule-scope"
+                value={scope}
+                onChange={(e) => setScope(e.target.value)}
+                placeholder="changes / access / incidents / global"
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="rule-desc">Description</Label>
+            <Textarea
+              id="rule-desc"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="What does this rule enforce?"
+              rows={2}
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="rule-rationale">Rationale (why does this rule exist?)</Label>
+            <Textarea
+              id="rule-rationale"
+              value={rationale}
+              onChange={(e) => setRationale(e.target.value)}
+              placeholder="Fed verbatim to agents so they can explain enforcement during triage."
+              rows={3}
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="rule-applies">Applies to (one per line)</Label>
+            <Textarea
+              id="rule-applies"
+              value={appliesToText}
+              onChange={(e) => setAppliesToText(e.target.value)}
+              placeholder={'service:payment\nservice:orders'}
+              rows={3}
+              className="font-mono text-xs"
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="rule-examples">Examples (one per line)</Label>
+            <Textarea
+              id="rule-examples"
+              value={examplesText}
+              onChange={(e) => setExamplesText(e.target.value)}
+              placeholder={'CHG-1234 was auto-approved because risk=low and CI passed.\nCHG-5678 was denied because rollback plan missing.'}
+              rows={3}
+            />
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="rule-tags">Tags (comma separated)</Label>
+            <Input
+              id="rule-tags"
+              value={tagsText}
+              onChange={(e) => setTagsText(e.target.value)}
+              placeholder="security, prod, auto-approve"
+            />
+          </div>
+
+          <label className="flex items-center gap-2 text-sm text-foreground/85 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={isActive}
+              onChange={(e) => setIsActive(e.target.checked)}
+              className="h-4 w-4 rounded border-border"
+            />
+            Active (feed to agent context)
+          </label>
+
+          {error && (
+            <div className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              {error}
+            </div>
+          )}
+        </div>
+
+        <DialogFooter>
+          <Button variant="ghost" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button onClick={handleSubmit} disabled={!valid || isPending}>
+            {isPending ? 'Saving…' : editing ? 'Save changes' : 'Create rule'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 
 function StatTile({ label, value, color }: { label: string; value: number; color: string }) {
   return (
     <Card>
-      <CardContent className="p-5">
-        <div className={cn('text-3xl font-semibold tabular-nums', color)}>{value}</div>
-        <div className="text-sm text-muted-foreground mt-1">{label}</div>
+      <CardContent className="p-6 flex flex-col items-center justify-center text-center">
+        <div className={cn('text-4xl font-semibold tabular-nums leading-none', color)}>
+          {value}
+        </div>
+        <div className="text-xs uppercase tracking-wider text-muted-foreground mt-3">
+          {label}
+        </div>
       </CardContent>
     </Card>
   )

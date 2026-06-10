@@ -148,6 +148,140 @@ export async function actionsRoutes(app: FastifyInstance) {
     })
   })
 
+  /**
+   * POST /api/approvals/:id/note
+   *
+   * Attach a free-text note to an approval. Used during triage to capture
+   * rationale, ask for clarification, or record reasoning. RBAC: `attach_notes`.
+   * Body: { content: string }
+   */
+  app.post('/api/approvals/:id/note', {
+    preHandler: [requireAuth],
+  }, async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const { content } = request.body as { content?: string }
+
+    if (!content || !content.trim()) {
+      throw new ValidationError('Note content is required.')
+    }
+
+    const rbac = requireAction('attach_notes' as any)
+    await rbac(request, reply)
+
+    const approval = await prisma.approval.findUnique({ where: { id } })
+    if (!approval) {
+      throw new ValidationError(`Approval not found: ${id}`)
+    }
+
+    const note = await prisma.approvalNote.create({
+      data: {
+        approvalId: id,
+        actor: request.user!.name,
+        content: content.trim(),
+      },
+    })
+
+    await prisma.auditEvent.create({
+      data: {
+        actor: request.user!.name,
+        action: 'note_attached',
+        objectType: 'approval',
+        objectId: id,
+        objectTitle: approval.title,
+        result: 'success',
+        details: content.trim().slice(0, 200),
+      },
+    })
+
+    return reply.send({
+      note: {
+        id: note.id,
+        approvalId: note.approvalId,
+        actor: note.actor,
+        content: note.content,
+        createdAt: note.createdAt.toISOString(),
+      },
+    })
+  })
+
+  /**
+   * POST /api/approvals/:id/escalate
+   *
+   * Mark an approval as escalated. Bumps version, writes audit event with the
+   * reason, and notifies via integration channels. RBAC: `escalate`.
+   * Body: { reason: string, expectedVersion?: number }
+   */
+  app.post('/api/approvals/:id/escalate', {
+    preHandler: [requireAuth, idempotency],
+  }, async (request, reply) => {
+    if (request.idempotencyHit) return
+    const { id } = request.params as { id: string }
+    const { reason, expectedVersion: bodyExpectedVersion } = request.body as {
+      reason?: string
+      expectedVersion?: number
+    }
+
+    if (!reason || !reason.trim()) {
+      throw new ValidationError('Escalation reason is required.')
+    }
+
+    const rbac = requireAction('escalate')
+    await rbac(request, reply)
+
+    const ifMatchHeader = (request.headers['if-match'] as string | undefined)?.replace(/"/g, '').trim()
+    const headerExpectedVersion = ifMatchHeader && /^\d+$/.test(ifMatchHeader) ? Number(ifMatchHeader) : undefined
+    const expectedVersion = headerExpectedVersion ?? bodyExpectedVersion
+
+    const approval = await prisma.approval.findUnique({ where: { id } })
+    if (!approval) {
+      throw new ValidationError(`Approval not found: ${id}`)
+    }
+
+    if (expectedVersion !== undefined && approval.version !== expectedVersion) {
+      return reply.code(412).send({
+        error: 'version_conflict',
+        message: `Approval has been modified. Expected version ${expectedVersion}, got ${approval.version}.`,
+        currentVersion: approval.version,
+      })
+    }
+
+    const updated = await prisma.approval.update({
+      where: { id },
+      data: {
+        status: 'escalated',
+        version: { increment: 1 },
+      },
+    })
+
+    await prisma.approvalNote.create({
+      data: {
+        approvalId: id,
+        actor: request.user!.name,
+        content: `[ESCALATED] ${reason.trim()}`,
+      },
+    })
+
+    await prisma.auditEvent.create({
+      data: {
+        actor: request.user!.name,
+        action: 'approval_escalated',
+        objectType: 'approval',
+        objectId: id,
+        objectTitle: approval.title,
+        result: 'escalated',
+        details: reason.trim().slice(0, 200),
+      },
+    })
+
+    const fullApproval = await prisma.approval.findUnique({
+      where: { id },
+      include: { coApprovals: true, decisionImpact: true },
+    })
+
+    reply.header('ETag', `"${updated.version}"`)
+    return reply.send({ approval: mapApproval(fullApproval) })
+  })
+
   // ═══════════════════════════════════════════════════════
   // CHANGE ACTIONS
   // ═══════════════════════════════════════════════════════

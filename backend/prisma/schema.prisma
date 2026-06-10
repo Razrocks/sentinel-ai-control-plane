@@ -93,6 +93,7 @@ enum ApprovalStatus {
   approved
   denied
   approved_with_condition
+  escalated
 }
 
 enum CoApprovalStatus {
@@ -106,6 +107,7 @@ enum AuditObjectType {
   incident
   access
   policy
+  policy_rule
   execution
   approval
 }
@@ -308,10 +310,28 @@ model Approval {
 
   coApprovals    CoApproval[]
   decisionImpact DecisionImpact?
+  notes          ApprovalNote[]
 
   @@index([status])
   @@index([type])
   @@map("approvals")
+}
+
+/// Notes are free-text comments attached to an approval by an approver
+/// or admin. Used during triage to capture rationale, ask for clarification,
+/// or record an escalation reason. Always written via API only; UI never
+/// mutates these directly. Audit row written separately.
+model ApprovalNote {
+  id         String   @id @default(cuid())
+  approvalId String   @map("approval_id")
+  actor      String
+  content    String
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  approval Approval @relation(fields: [approvalId], references: [id], onDelete: Cascade)
+
+  @@index([approvalId])
+  @@map("approval_notes")
 }
 
 model CoApproval {
@@ -379,6 +399,23 @@ model PolicyRule {
   scope       String
   appliesTo   String[]       @map("applies_to")
   isActive    Boolean        @map("is_active")
+  /// Free-form rationale ("why does this rule exist?") fed verbatim to
+  /// agents alongside the rule itself so they can explain enforcement
+  /// to humans during triage.
+  rationale   String?
+  /// Concrete examples of inputs that trigger this rule. Shown in UI +
+  /// included in agent context so the skill can pattern-match similar
+  /// requests.
+  examples    String[]       @default([])
+  /// Lightweight categorization for filtering on the Policies page.
+  tags        String[]       @default([])
+  createdAt   DateTime       @default(now()) @map("created_at")
+  updatedAt   DateTime       @default(now()) @updatedAt @map("updated_at")
+  createdBy   String?        @map("created_by")
+  updatedBy   String?        @map("updated_by")
+  /// B2-style optimistic concurrency — clients echo this on PATCH so
+  /// stale edits get a 412 instead of silently overwriting.
+  version     Int            @default(0)
 
   @@map("policy_rules")
 }

@@ -7,7 +7,7 @@
  * Pure CSS visualization — no chart lib. Tables + inline bars.
  */
 import { useState } from 'react'
-import { Activity, Cpu, DollarSign, Layers, RefreshCw, AlertTriangle } from 'lucide-react'
+import { Activity, Cpu, DollarSign, Layers, AlertTriangle, RefreshCw } from 'lucide-react'
 import {
   useAdminMetricsHealth,
   useAdminMetricsSkills,
@@ -15,6 +15,17 @@ import {
   useAdminMetricsAudit,
 } from '@/hooks/useData'
 import { useRole } from '@/lib/roles'
+import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { cn } from '@/lib/utils'
 
 type Tab = 'health' | 'skills' | 'cost' | 'audit'
 
@@ -32,71 +43,68 @@ export default function AdminMetrics() {
 
   if (role !== 'admin') {
     return (
-      <div className="p-8 max-w-2xl">
-        <div className="flex items-center gap-3 p-4 rounded-lg border border-red-500/30 bg-red-500/5">
-          <AlertTriangle className="w-5 h-5 text-red-400" />
-          <div>
-            <div className="font-medium text-red-200">Admin only</div>
-            <div className="text-xs text-text-muted mt-1">
-              The metrics dashboard requires the <code className="text-accent">admin</code> role.
-            </div>
-          </div>
+      <div className="flex flex-col gap-10">
+        <div className="flex flex-col gap-3">
+          <h1 className="font-heading text-3xl font-medium tracking-tight text-foreground">
+            System Metrics
+          </h1>
         </div>
+        <Alert variant="destructive">
+          <AlertTriangle />
+          <AlertTitle>Admin only</AlertTitle>
+          <AlertDescription>
+            The metrics dashboard requires the <code>admin</code> role.
+          </AlertDescription>
+        </Alert>
       </div>
     )
   }
 
   return (
-    <div className="p-6 space-y-4">
-      <header className="flex items-center justify-between">
-        <div>
-          <h1 className="text-xl font-semibold text-text">System Metrics</h1>
-          <p className="text-xs text-text-muted mt-1">
+    <div className="flex flex-col gap-10">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div className="flex flex-col gap-3">
+          <h1 className="font-heading text-3xl font-medium tracking-tight text-foreground">
+            System Metrics
+          </h1>
+          <p className="text-sm text-muted-foreground">
             Live operational view. Refreshes every 30 seconds.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          {(tab === 'skills' || tab === 'cost' || tab === 'audit') && (
-            <select
-              value={days}
-              onChange={(e) => setDays(parseInt(e.target.value, 10))}
-              className="bg-surface border border-border rounded-md px-2 py-1 text-xs text-text"
-            >
+        {(tab === 'skills' || tab === 'cost' || tab === 'audit') && (
+          <Select value={String(days)} onValueChange={(v) => setDays(parseInt(v, 10))}>
+            <SelectTrigger className="w-40">
+              <SelectValue placeholder="Range" />
+            </SelectTrigger>
+            <SelectContent>
               {[1, 7, 14, 30, 90].map((d) => (
-                <option key={d} value={d}>
+                <SelectItem key={d} value={String(d)}>
                   Last {d} {d === 1 ? 'day' : 'days'}
-                </option>
+                </SelectItem>
               ))}
-            </select>
-          )}
-        </div>
-      </header>
+            </SelectContent>
+          </Select>
+        )}
+      </div>
 
-      {/* Tabs */}
-      <nav className="flex gap-1 border-b border-border">
-        {TABS.map((t) => {
-          const Icon = t.icon
-          const active = tab === t.id
-          return (
-            <button
-              key={t.id}
-              type="button"
-              onClick={() => setTab(t.id)}
-              className={
-                'flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 transition-colors ' +
-                (active
-                  ? 'border-accent text-accent'
-                  : 'border-transparent text-text-muted hover:text-text')
-              }
-            >
-              <Icon className="w-4 h-4" />
-              {t.label}
-            </button>
-          )
-        })}
-      </nav>
+      <Tabs value={tab} onValueChange={(v) => setTab(v as Tab)}>
+        <TabsList className="h-11 gap-1 p-1">
+          {TABS.map((t) => {
+            const Icon = t.icon
+            return (
+              <TabsTrigger
+                key={t.id}
+                value={t.id}
+                className="h-9 gap-2 px-4 text-sm font-medium flex-none"
+              >
+                <Icon className="h-4 w-4" />
+                {t.label}
+              </TabsTrigger>
+            )
+          })}
+        </TabsList>
+      </Tabs>
 
-      {/* Tab content */}
       {tab === 'health' && <HealthTab />}
       {tab === 'skills' && <SkillsTab days={days} />}
       {tab === 'cost' && <CostTab days={days} />}
@@ -150,7 +158,7 @@ function SkillsTab({ days }: { days: number }) {
     <Section title={`Per-Skill Stats (last ${days} ${days === 1 ? 'day' : 'days'})`}>
       <div className="overflow-x-auto">
         <table className="w-full text-sm">
-          <thead className="text-xs text-text-muted uppercase tracking-wider border-b border-border">
+          <thead className="text-xs text-muted-foreground uppercase tracking-wider border-b border-border">
             <tr>
               <Th>Skill</Th>
               <Th align="right">Calls</Th>
@@ -166,9 +174,9 @@ function SkillsTab({ days }: { days: number }) {
             {data.skills.map((s) => {
               const successPct = s.totalCalls === 0 ? 0 : (s.successCount / s.totalCalls) * 100
               return (
-                <tr key={s.skill} className="border-b border-border/50 hover:bg-surface-hover">
+                <tr key={s.skill} className="border-b border-border/50 hover:bg-muted/40">
                   <td className="py-2 px-2">
-                    <code className="text-text">{s.skill}</code>
+                    <code className="text-foreground">{s.skill}</code>
                   </td>
                   <td className="py-2 px-2 text-right tabular-nums">
                     <Bar value={s.totalCalls} max={maxCalls} />
@@ -224,7 +232,7 @@ function CostTab({ days }: { days: number }) {
             <Empty msg="No actor activity." />
           ) : (
             <table className="w-full text-sm">
-              <thead className="text-xs text-text-muted uppercase border-b border-border">
+              <thead className="text-xs text-muted-foreground uppercase border-b border-border">
                 <tr>
                   <Th>Actor</Th>
                   <Th align="right">Calls</Th>
@@ -251,7 +259,7 @@ function CostTab({ days }: { days: number }) {
             <Empty msg="No model usage." />
           ) : (
             <table className="w-full text-sm">
-              <thead className="text-xs text-text-muted uppercase border-b border-border">
+              <thead className="text-xs text-muted-foreground uppercase border-b border-border">
                 <tr>
                   <Th>Model</Th>
                   <Th align="right">Calls</Th>
@@ -262,7 +270,7 @@ function CostTab({ days }: { days: number }) {
                 {data.byModel.map((m) => (
                   <tr key={m.model} className="border-b border-border/50">
                     <td className="py-2 px-2">
-                      <code className="text-xs text-text-muted">{m.model}</code>
+                      <code className="text-xs text-muted-foreground">{m.model}</code>
                     </td>
                     <td className="py-2 px-2 text-right tabular-nums">{m.calls}</td>
                     <td className="py-2 px-2 text-right tabular-nums">
@@ -306,7 +314,7 @@ function AuditTab({ days }: { days: number }) {
           <Empty msg="No actions recorded." />
         ) : (
           <table className="w-full text-sm">
-            <thead className="text-xs text-text-muted uppercase border-b border-border">
+            <thead className="text-xs text-muted-foreground uppercase border-b border-border">
               <tr>
                 <Th>Action</Th>
                 <Th align="right">Total</Th>
@@ -349,26 +357,41 @@ function StatCard({
   colorClass?: string
 }) {
   return (
-    <div className="bg-surface rounded-lg border border-border p-4">
-      <div className="text-xs text-text-muted uppercase tracking-wider">{label}</div>
-      <div className={`text-2xl font-semibold mt-1 tabular-nums ${colorClass ?? 'text-text'}`}>{value}</div>
-      {sub && <div className="text-xs text-text-muted mt-1">{sub}</div>}
-    </div>
+    <Card>
+      <CardContent className="py-5">
+        <div className="text-xs text-muted-foreground uppercase tracking-wider">{label}</div>
+        <div className={cn('text-3xl font-semibold mt-2 tabular-nums', colorClass ?? 'text-foreground')}>
+          {value}
+        </div>
+        {sub && <div className="text-xs text-muted-foreground mt-1">{sub}</div>}
+      </CardContent>
+    </Card>
   )
 }
 
 function Section({ title, className, children }: { title: string; className?: string; children: React.ReactNode }) {
   return (
-    <div className={`bg-surface rounded-lg border border-border p-4 ${className ?? ''}`}>
-      <h2 className="text-xs font-medium text-text-muted uppercase tracking-wider mb-3">{title}</h2>
-      {children}
-    </div>
+    <Card className={className}>
+      <CardHeader className="border-b">
+        <CardTitle className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+          {title}
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="py-4">{children}</CardContent>
+    </Card>
   )
 }
 
 function Th({ children, align }: { children: React.ReactNode; align?: 'left' | 'right' }) {
   return (
-    <th className={`py-2 px-2 font-medium ${align === 'right' ? 'text-right' : 'text-left'}`}>{children}</th>
+    <th
+      className={cn(
+        'py-2 px-2 font-medium text-xs uppercase tracking-wider text-muted-foreground',
+        align === 'right' ? 'text-right' : 'text-left',
+      )}
+    >
+      {children}
+    </th>
   )
 }
 
@@ -376,10 +399,10 @@ function Bar({ value, max, suffix }: { value: number; max: number; suffix?: stri
   const pct = max === 0 ? 0 : Math.min(100, (value / max) * 100)
   return (
     <div className="flex items-center justify-end gap-2">
-      <div className="flex-1 max-w-[80px] h-1.5 bg-bg rounded-full overflow-hidden">
-        <div className="h-full bg-accent" style={{ width: `${pct}%` }} />
+      <div className="flex-1 max-w-[80px] h-1.5 bg-muted rounded-full overflow-hidden">
+        <div className="h-full bg-primary" style={{ width: `${pct}%` }} />
       </div>
-      <span className="tabular-nums text-text">{suffix ?? value.toLocaleString()}</span>
+      <span className="tabular-nums text-foreground">{suffix ?? value.toLocaleString()}</span>
     </div>
   )
 }
@@ -389,9 +412,9 @@ function KeyValueTable({ rows }: { rows: Array<[string, string | number]> }) {
     <table className="w-full text-sm">
       <tbody>
         {rows.map(([k, v]) => (
-          <tr key={k} className="border-b border-border/30 last:border-b-0">
-            <td className="py-2 px-2 text-text-muted">{k}</td>
-            <td className="py-2 px-2 text-right tabular-nums text-text">{v}</td>
+          <tr key={k} className="border-b border-border/40 last:border-b-0">
+            <td className="py-2 px-2 text-muted-foreground">{k}</td>
+            <td className="py-2 px-2 text-right tabular-nums text-foreground">{v}</td>
           </tr>
         ))}
       </tbody>
@@ -401,8 +424,8 @@ function KeyValueTable({ rows }: { rows: Array<[string, string | number]> }) {
 
 function Loading() {
   return (
-    <div className="flex items-center gap-2 text-text-muted text-sm p-6">
-      <RefreshCw className="w-4 h-4 animate-spin" />
+    <div className="flex items-center gap-2 text-muted-foreground text-sm p-6">
+      <RefreshCw className="h-4 w-4 animate-spin" />
       Loading…
     </div>
   )
@@ -411,18 +434,16 @@ function Loading() {
 function ErrorBox({ error }: { error: unknown }) {
   const msg = error instanceof Error ? error.message : String(error)
   return (
-    <div className="flex items-start gap-2 p-4 rounded-lg border border-red-500/30 bg-red-500/5 text-red-200 text-sm">
-      <AlertTriangle className="w-4 h-4 mt-0.5" />
-      <div>
-        <div className="font-medium">Failed to load metrics</div>
-        <div className="text-xs opacity-80 mt-1">{msg}</div>
-      </div>
-    </div>
+    <Alert variant="destructive">
+      <AlertTriangle />
+      <AlertTitle>Failed to load metrics</AlertTitle>
+      <AlertDescription>{msg}</AlertDescription>
+    </Alert>
   )
 }
 
 function Empty({ msg }: { msg: string }) {
-  return <div className="text-sm text-text-muted py-4">{msg}</div>
+  return <div className="text-sm text-muted-foreground py-4">{msg}</div>
 }
 
 function formatLabel(key: string): string {

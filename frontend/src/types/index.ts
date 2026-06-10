@@ -164,6 +164,28 @@ export interface PolicyRule {
   scope: string
   appliesTo: string[]
   isActive: boolean
+  rationale?: string | null
+  examples?: string[]
+  tags?: string[]
+  createdAt?: string | null
+  updatedAt?: string | null
+  createdBy?: string | null
+  updatedBy?: string | null
+  version?: number
+}
+
+export interface PolicyRuleInput {
+  name: string
+  description: string
+  bundle: string
+  decision: PolicyDecision
+  scope: string
+  appliesTo?: string[]
+  isActive?: boolean
+  rationale?: string | null
+  examples?: string[]
+  tags?: string[]
+  expectedVersion?: number
 }
 
 // ─── Phase 0 additions ──────────────────────────────────

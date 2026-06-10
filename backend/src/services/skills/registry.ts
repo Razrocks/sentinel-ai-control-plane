@@ -479,7 +479,7 @@ const draft_work_note: SkillSpec<S.DraftWorkNoteInput, S.DraftWorkNoteOutput> = 
   outputSchema: S.DraftWorkNoteOutput,
   auditAction: 'work_note_drafted',
   purpose:
-    'Draft a ServiceNow-style work note (3-6 sentences) with a recommended next-update time and audience.',
+    'Draft an internal work note (3-6 sentences) with a recommended next-update time and audience.',
   buildPrompt: makeBuildPrompt<S.DraftWorkNoteInput>(
     [
       'Produce a NEW JSON object with these EXACT fields:',

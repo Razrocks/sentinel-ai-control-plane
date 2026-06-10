@@ -93,26 +93,27 @@ export function ReanalyzeButton({
   const showStatus = showSuccess || showError
 
   return (
-    <div className={cn('flex flex-col gap-2', className)}>
+    <div className={cn('flex flex-col gap-3', className)}>
       <button
         type="button"
         onClick={handleClick}
         disabled={isPending}
         className={cn(
-          'inline-flex items-center gap-2 self-start rounded-md px-3 py-2 text-sm font-medium transition-colors',
-          'border border-purple-500/40 bg-purple-500/10 text-purple-200',
+          'flex w-full h-12 items-center justify-center gap-2.5 rounded-lg px-5 text-sm font-semibold transition-colors',
+          'border border-purple-500/40 bg-purple-500/10 text-purple-300',
           'hover:bg-purple-500/20 hover:border-purple-500/60',
           'disabled:opacity-50 disabled:cursor-not-allowed',
+          'shadow-sm',
         )}
       >
         {isPending ? (
           <>
-            <Loader2 className="h-4 w-4 animate-spin" />
+            <Loader2 className="h-5 w-5 animate-spin" />
             Analyzing… (5-15s)
           </>
         ) : (
           <>
-            <Sparkles className="h-4 w-4" />
+            <Sparkles className="h-5 w-5" />
             {LABELS[kind]}
           </>
         )}

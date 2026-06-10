@@ -27,6 +27,10 @@ import { ReanalyzeButton } from '@/components/shared'
 import { RiskBadge, SystemChip, ActionGuardModal, ContextualAssistant } from '@/components/shared'
 import { formatDate } from '@/lib/utils'
 import { useRole } from '@/lib/roles'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion'
+import { cn } from '@/lib/utils'
 
 const sevToRisk = { sev1: 'critical', sev2: 'high', sev3: 'medium', sev4: 'low' } as const
 
@@ -170,8 +174,8 @@ function getRecommendedNextStep(incident: (typeof mockIncidents)[number]) {
     label: 'Draft response and route',
     detail: 'Triage assessment needed before remediation',
     accent: 'border-accent',
-    bg: 'bg-accent/10',
-    text: 'text-accent',
+    bg: 'bg-primary/10',
+    text: 'text-primary',
   }
 }
 
@@ -187,7 +191,7 @@ export default function IncidentDetail() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <p className="text-text-muted">Loading...</p>
+        <p className="text-muted-foreground">Loading...</p>
       </div>
     )
   }
@@ -195,7 +199,7 @@ export default function IncidentDetail() {
   if (!incident) {
     return (
       <div className="flex items-center justify-center h-64">
-        <p className="text-text-muted">Incident not found</p>
+        <p className="text-muted-foreground">Incident not found</p>
       </div>
     )
   }
@@ -206,13 +210,13 @@ export default function IncidentDetail() {
   const remediation = mockRemediations[incident.id]
 
   const allActions = [
-    { key: 'draft_response', permission: 'draft_response', label: 'Draft Response', icon: Send, style: 'bg-accent/10 text-accent hover:bg-accent/20', desc: 'Generate a customer-facing response based on the diagnosis.' },
-    { key: 'work_note', permission: 'work_note', label: 'Add Work Note', icon: MessageSquare, style: 'bg-surface-raised text-text-secondary hover:bg-surface-overlay hover:text-text-primary', desc: 'Add an internal work note.' },
-    { key: 'route', permission: 'route', label: 'Route to Team', icon: ArrowUpRight, style: 'bg-surface-raised text-text-secondary hover:bg-surface-overlay hover:text-text-primary', desc: 'Route this incident to another team.' },
+    { key: 'draft_response', permission: 'draft_response', label: 'Draft Response', icon: Send, style: 'bg-primary/10 text-primary hover:bg-primary/20', desc: 'Generate a customer-facing response based on the diagnosis.' },
+    { key: 'work_note', permission: 'work_note', label: 'Add Work Note', icon: MessageSquare, style: 'bg-muted text-foreground/80 hover:bg-primary hover:text-foreground', desc: 'Add an internal work note.' },
+    { key: 'route', permission: 'route', label: 'Route to Team', icon: ArrowUpRight, style: 'bg-muted text-foreground/80 hover:bg-primary hover:text-foreground', desc: 'Route this incident to another team.' },
     { key: 'trigger_fix', permission: 'trigger_fix', label: 'Trigger Allowed Fix', icon: Wrench, style: 'bg-status-approved/10 text-status-approved hover:bg-status-approved/20', desc: 'Execute the recommended safe remediation action.' },
     { key: 'escalate', permission: 'escalate', label: 'Escalate', icon: ArrowUpRight, style: 'bg-status-escalated/10 text-status-escalated hover:bg-status-escalated/20', desc: 'Escalate this incident.' },
-    { key: 'link_kb', permission: 'link_kb', label: 'Link KB Article', icon: Link2, style: 'bg-surface-raised text-text-secondary hover:bg-surface-overlay hover:text-text-primary', desc: 'Link a knowledge base article.' },
-    { key: 'mark_awaiting', permission: 'assess', label: 'Mark Awaiting Approval', icon: CheckCircle, style: 'bg-surface-raised text-text-secondary hover:bg-surface-overlay hover:text-text-primary', desc: 'Mark as awaiting approval.' },
+    { key: 'link_kb', permission: 'link_kb', label: 'Link KB Article', icon: Link2, style: 'bg-muted text-foreground/80 hover:bg-primary hover:text-foreground', desc: 'Link a knowledge base article.' },
+    { key: 'mark_awaiting', permission: 'assess', label: 'Mark Awaiting Approval', icon: CheckCircle, style: 'bg-muted text-foreground/80 hover:bg-primary hover:text-foreground', desc: 'Mark as awaiting approval.' },
   ]
 
   // Split into available and requires-approval buckets
@@ -225,84 +229,81 @@ export default function IncidentDetail() {
   const notAvailable = blockedActions.filter(b => !approvalRequiredKeys.includes(b.action))
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col gap-10">
       {/* Header */}
       <div className="flex items-start gap-4">
-        <Link to="/incidents" className="mt-1 p-1 rounded hover:bg-surface-raised transition-colors">
-          <ArrowLeft className="w-5 h-5 text-text-muted" />
+        <Link
+          to="/incidents"
+          className="mt-1 flex h-9 w-9 items-center justify-center rounded-md hover:bg-muted transition-colors"
+        >
+          <ArrowLeft className="h-5 w-5 text-muted-foreground" />
         </Link>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-3 mb-1">
-            <span className="text-sm text-text-muted font-mono">{incident.incidentId}</span>
+        <div className="flex-1 min-w-0 flex flex-col gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-mono text-muted-foreground">{incident.incidentId}</span>
             <RiskBadge level={sevToRisk[incident.severity]} />
-            <span className="text-sm text-text-secondary capitalize px-2 py-0.5 rounded bg-surface-raised">{incident.status}</span>
+            <span className="rounded-md bg-muted px-2 py-1 text-xs font-medium uppercase tracking-wider text-foreground">
+              {incident.status}
+            </span>
           </div>
-          <h1 className="text-xl font-semibold text-text-primary break-words">{incident.title}</h1>
-          <p className="text-sm text-text-secondary mt-1 break-words">{incident.description}</p>
+          <h1 className="font-heading text-3xl font-medium tracking-tight text-foreground break-words">
+            {incident.title}
+          </h1>
+          <p className="text-sm text-muted-foreground break-words">{incident.description}</p>
         </div>
       </div>
 
-      {/* Three-column grid */}
-      <div className="grid grid-cols-[280px_1fr_280px] gap-5">
-        {/* ── Left: Incident Context ── */}
-        <div>
-          <div className="bg-surface rounded-lg border border-border p-4 space-y-4">
-            <h3 className="text-xs font-medium text-text-muted uppercase tracking-wider">Incident Context</h3>
-            <div className="space-y-3">
-              <div>
-                <div className="text-xs text-text-muted">Requester</div>
-                <div className="text-sm text-text-primary">{incident.requester}</div>
-              </div>
-              <div>
-                <div className="text-xs text-text-muted">Affected Service</div>
-                <SystemChip name={incident.affectedService} />
-              </div>
-              <div>
-                <div className="text-xs text-text-muted">Severity</div>
-                <RiskBadge level={sevToRisk[incident.severity]} />
-              </div>
-              <div>
-                <div className="text-xs text-text-muted">Assignment Group</div>
-                <div className="text-sm text-text-primary">{incident.assignmentGroup}</div>
-              </div>
-              <div>
-                <div className="text-xs text-text-muted">Related CIs</div>
-                <div className="flex flex-wrap gap-1 mt-1">
-                  {incident.relatedCI.map(ci => <SystemChip key={ci} name={ci} />)}
-                </div>
-              </div>
-              <div>
-                <div className="text-xs text-text-muted">Related Changes</div>
-                <div className="flex flex-wrap gap-1 mt-1">
-                  {incident.relatedChanges.length > 0 ? incident.relatedChanges.map(c => (
-                    <Link key={c} to={`/changes/${c}`} className="text-xs text-accent font-mono hover:underline">{c}</Link>
-                  )) : <span className="text-xs text-text-muted">None</span>}
-                </div>
-              </div>
-              <div>
-                <div className="text-xs text-text-muted">Created</div>
-                <div className="text-sm text-text-secondary">{formatDate(incident.createdAt)}</div>
-              </div>
-              {incident.isRecurring && (
-                <div className="flex items-center gap-1.5 bg-status-pending/10 border border-status-pending/20 rounded px-2 py-1.5">
-                  <RefreshCw className="w-3.5 h-3.5 text-status-pending" />
-                  <span className="text-xs text-status-pending font-medium">Recurring issue detected</span>
-                </div>
+      {/* Meta strip — flat row of facts under the header */}
+      <Card>
+        <CardContent className="grid grid-cols-2 gap-x-6 gap-y-4 py-5 md:grid-cols-4 lg:grid-cols-6">
+          <Field label="Requester">
+            <span className="text-sm text-foreground">{incident.requester}</span>
+          </Field>
+          <Field label="Service">
+            <SystemChip name={incident.affectedService} />
+          </Field>
+          <Field label="Assignment">
+            <span className="text-sm text-foreground">{incident.assignmentGroup}</span>
+          </Field>
+          <Field label="Related CIs">
+            <div className="flex flex-wrap gap-1">
+              {incident.relatedCI.slice(0, 2).map(ci => <SystemChip key={ci} name={ci} />)}
+              {incident.relatedCI.length > 2 && (
+                <span className="text-xs text-muted-foreground">+{incident.relatedCI.length - 2}</span>
               )}
             </div>
-          </div>
-        </div>
+          </Field>
+          <Field label="Related Changes">
+            <div className="flex flex-wrap gap-1.5">
+              {incident.relatedChanges.length > 0 ? incident.relatedChanges.map(c => (
+                <Link key={c} to={`/changes/${c}`} className="text-xs font-mono text-primary hover:underline">{c}</Link>
+              )) : <span className="text-xs text-muted-foreground">None</span>}
+            </div>
+          </Field>
+          <Field label="Created">
+            <span className="text-sm text-foreground">{formatDate(incident.createdAt)}</span>
+          </Field>
+          {incident.isRecurring && (
+            <div className="col-span-full flex items-center gap-2 rounded-md border border-status-pending/30 bg-status-pending/10 px-3 py-2">
+              <RefreshCw className="h-4 w-4 text-status-pending" />
+              <span className="text-sm font-medium text-status-pending">Recurring issue detected</span>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
-        {/* ── Center: Analysis workspace ── */}
-        <div className="space-y-4 min-w-0">
+      {/* Body — wider main column + narrow right rail */}
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-6">
+        {/* ── Main: Analysis workspace ── */}
+        <div className="flex flex-col gap-5 min-w-0">
           {/* Recommended Next Step callout */}
           <div className={`rounded-lg border-l-4 ${nextStep.accent} ${nextStep.bg} p-4`}>
             <div className="flex items-start gap-3">
               <Compass className={`w-5 h-5 ${nextStep.text} flex-shrink-0 mt-0.5`} />
               <div>
-                <div className="text-xs font-medium text-text-muted uppercase tracking-wider mb-1">Recommended Next Step</div>
+                <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-1">Recommended Next Step</div>
                 <div className={`text-sm font-semibold ${nextStep.text}`}>{nextStep.label}</div>
-                <div className="text-sm text-text-secondary mt-0.5">{nextStep.detail}</div>
+                <div className="text-sm text-foreground/80 mt-0.5">{nextStep.detail}</div>
               </div>
             </div>
           </div>
@@ -318,133 +319,147 @@ export default function IncidentDetail() {
               ? { label: 'Config fix available — approval required first', icon: ShieldCheck, bg: 'bg-status-pending/10 border-status-pending/30', text: 'text-status-pending' }
               : draftOnly
               ? { label: 'Draft only until approval — escalate before remediation', icon: AlertTriangle, bg: 'bg-risk-high/10 border-risk-high/30', text: 'text-risk-high' }
-              : { label: 'Triage and route — no safe fix path identified yet', icon: Compass, bg: 'bg-accent/10 border-accent/30', text: 'text-accent' }
+              : { label: 'Triage and route — no safe fix path identified yet', icon: Compass, bg: 'bg-primary/10 border-accent/30', text: 'text-primary' }
             const StripIcon = strip.icon
             return (
-              <div className={`flex items-center gap-2.5 px-4 py-2.5 rounded-lg border ${strip.bg}`}>
+              <div className={`flex items-center gap-3 px-4 py-2.5 rounded-lg border ${strip.bg}`}>
                 <StripIcon className={`w-4 h-4 flex-shrink-0 ${strip.text}`} />
                 <span className={`text-sm font-semibold ${strip.text}`}>{strip.label}</span>
               </div>
             )
           })()}
 
-          {/* Diagnosis & Recommendation */}
-          <div className="bg-surface rounded-lg border border-border p-4 space-y-4">
-            <h3 className="text-sm font-medium text-text-primary">Diagnosis & Recommendation</h3>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="bg-surface-raised rounded p-3">
-                <div className="text-xs text-text-muted mb-1">Likely Issue Type</div>
-                <div className="text-sm font-medium text-text-primary">{incident.likelyIssueType}</div>
-              </div>
-              <div className="bg-surface-raised rounded p-3">
-                <div className="text-xs text-text-muted mb-1">Root Cause Category</div>
-                <div className="text-sm font-medium text-text-primary">{incident.rootCauseCategory}</div>
-              </div>
-            </div>
-            <div className="bg-surface-raised rounded p-4">
-              <div className="text-xs text-text-muted mb-2">Recommended Fix</div>
-              <div className="text-sm text-text-primary leading-relaxed">{incident.recommendedFix}</div>
-            </div>
-            {incident.kbArticles.length > 0 && (
-              <div>
-                <div className="text-xs text-text-muted mb-2">Relevant KB Articles</div>
-                <div className="space-y-1">
-                  {incident.kbArticles.map(kb => (
-                    <div key={kb} className="flex items-center gap-2 text-sm text-accent">
-                      <BookOpen className="w-3.5 h-3.5" />{kb}
+          {/* Main detail sections — collapsible accordion so users see only
+              what they need. Diagnosis is open by default since it's the
+              headline data; the rest collapse out of the way. */}
+          <Card className="py-0">
+            <Accordion type="multiple" defaultValue={['diagnosis', 'execution']}>
+              <AccordionItem value="diagnosis" className="border-b last:border-b-0">
+                <AccordionTrigger className="px-6 text-sm font-semibold">
+                  Diagnosis & Recommendation
+                </AccordionTrigger>
+                <AccordionContent className="px-6 pb-5 flex flex-col gap-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="bg-muted rounded-md p-3">
+                      <div className="text-xs text-muted-foreground mb-1">Likely Issue Type</div>
+                      <div className="text-sm font-medium text-foreground">{incident.likelyIssueType}</div>
                     </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Execution Readiness */}
-          <div className="bg-surface rounded-lg border border-border p-4 space-y-3">
-            <div className="flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4 text-text-muted" />
-              <h3 className="text-sm font-medium text-text-primary">Execution Readiness</h3>
-            </div>
-            <div className="grid grid-cols-3 gap-3">
-              <div className="bg-surface-raised rounded p-3">
-                <div className="text-xs text-text-muted mb-1">Fix Type</div>
-                <div className={`text-sm font-medium ${isConfigFix ? 'text-status-approved' : 'text-status-pending'}`}>
-                  {isConfigFix ? 'Config Only' : 'Code Change'}
-                </div>
-              </div>
-              <div className="bg-surface-raised rounded p-3">
-                <div className="text-xs text-text-muted mb-1">Safe to Trigger?</div>
-                <div className={`text-sm font-medium ${isConfigFix && !isHighSev ? 'text-status-approved' : 'text-status-pending'}`}>
-                  {isConfigFix && !isHighSev ? 'Yes' : isConfigFix ? 'With Approval' : 'Needs Review'}
-                </div>
-              </div>
-              <div className="bg-surface-raised rounded p-3">
-                <div className="text-xs text-text-muted mb-1">Approval Required?</div>
-                <div className={`text-sm font-medium ${isHighSev ? 'text-status-escalated' : 'text-text-primary'}`}>
-                  {isHighSev ? 'Yes — High Sev' : isConfigFix ? 'Standard' : 'Yes'}
-                </div>
-              </div>
-            </div>
-            {isConfigFix && (
-              <div className="text-xs text-text-secondary bg-surface-raised rounded px-3 py-2">
-                Config-only remediations are auto-proposed by policy. Human approval is still required before execution.
-              </div>
-            )}
-          </div>
-
-          {/* Impact Assessment */}
-          <div className="bg-surface rounded-lg border border-border p-4 space-y-3">
-            <div className="flex items-center gap-2">
-              <Activity className="w-4 h-4 text-text-muted" />
-              <h3 className="text-sm font-medium text-text-primary">Impact Assessment</h3>
-            </div>
-            <div className="space-y-3">
-              <div>
-                <div className="text-xs text-text-muted mb-2">Affected Configuration Items</div>
-                <div className="flex flex-wrap gap-1.5">
-                  {incident.relatedCI.map(ci => (
-                    <SystemChip key={ci} name={ci} />
-                  ))}
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="bg-surface-raised rounded p-3">
-                  <div className="text-xs text-text-muted mb-1">Blast Radius</div>
-                  <div className="text-sm font-medium text-text-primary">
-                    {incident.relatedCI.length} CI{incident.relatedCI.length !== 1 ? 's' : ''} impacted
+                    <div className="bg-muted rounded-md p-3">
+                      <div className="text-xs text-muted-foreground mb-1">Root Cause Category</div>
+                      <div className="text-sm font-medium text-foreground">{incident.rootCauseCategory}</div>
+                    </div>
                   </div>
-                </div>
-                <div className="bg-surface-raised rounded p-3">
-                  <div className="text-xs text-text-muted mb-1">Related Changes</div>
-                  <div className="text-sm font-medium text-text-primary">
-                    {incident.relatedChanges.length > 0 ? (
-                      <span className="text-accent">{incident.relatedChanges.length} linked</span>
-                    ) : (
-                      <span className="text-text-muted">None</span>
-                    )}
+                  <div className="bg-muted rounded-md p-4">
+                    <div className="text-xs text-muted-foreground mb-2">Recommended Fix</div>
+                    <div className="text-sm text-foreground leading-relaxed">{incident.recommendedFix}</div>
                   </div>
-                </div>
-              </div>
-              {incident.relatedChanges.length > 0 && (
-                <div className="text-xs text-text-secondary bg-status-pending/10 border border-status-pending/20 rounded px-3 py-2">
-                  This incident has linked changes. Review them to determine if the incident was caused by a recent deployment.
-                </div>
-              )}
-            </div>
-          </div>
+                  {incident.kbArticles.length > 0 && (
+                    <div>
+                      <div className="text-xs text-muted-foreground mb-2">Relevant KB Articles</div>
+                      <div className="flex flex-col gap-1.5">
+                        {incident.kbArticles.map(kb => (
+                          <div key={kb} className="flex items-center gap-2 text-sm text-primary">
+                            <BookOpen className="h-3.5 w-3.5" />{kb}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </AccordionContent>
+              </AccordionItem>
+
+              <AccordionItem value="execution" className="border-b last:border-b-0">
+                <AccordionTrigger className="px-6 text-sm font-semibold">
+                  <span className="flex items-center gap-2">
+                    <ShieldCheck className="h-4 w-4 text-muted-foreground" />
+                    Execution Readiness
+                  </span>
+                </AccordionTrigger>
+                <AccordionContent className="px-6 pb-5 flex flex-col gap-3">
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="bg-muted rounded-md p-3">
+                      <div className="text-xs text-muted-foreground mb-1">Fix Type</div>
+                      <div className={`text-sm font-medium ${isConfigFix ? 'text-status-approved' : 'text-status-pending'}`}>
+                        {isConfigFix ? 'Config Only' : 'Code Change'}
+                      </div>
+                    </div>
+                    <div className="bg-muted rounded-md p-3">
+                      <div className="text-xs text-muted-foreground mb-1">Safe to Trigger?</div>
+                      <div className={`text-sm font-medium ${isConfigFix && !isHighSev ? 'text-status-approved' : 'text-status-pending'}`}>
+                        {isConfigFix && !isHighSev ? 'Yes' : isConfigFix ? 'With Approval' : 'Needs Review'}
+                      </div>
+                    </div>
+                    <div className="bg-muted rounded-md p-3">
+                      <div className="text-xs text-muted-foreground mb-1">Approval Required?</div>
+                      <div className={`text-sm font-medium ${isHighSev ? 'text-status-escalated' : 'text-foreground'}`}>
+                        {isHighSev ? 'Yes — High Sev' : isConfigFix ? 'Standard' : 'Yes'}
+                      </div>
+                    </div>
+                  </div>
+                  {isConfigFix && (
+                    <div className="text-xs text-foreground/85 bg-muted rounded-md px-3 py-2">
+                      Config-only remediations are auto-proposed by policy. Human approval is still required before execution.
+                    </div>
+                  )}
+                </AccordionContent>
+              </AccordionItem>
+
+              <AccordionItem value="impact" className="border-b last:border-b-0">
+                <AccordionTrigger className="px-6 text-sm font-semibold">
+                  <span className="flex items-center gap-2">
+                    <Activity className="h-4 w-4 text-muted-foreground" />
+                    Impact Assessment
+                  </span>
+                </AccordionTrigger>
+                <AccordionContent className="px-6 pb-5 flex flex-col gap-3">
+                  <div>
+                    <div className="text-xs text-muted-foreground mb-2">Affected Configuration Items</div>
+                    <div className="flex flex-wrap gap-1.5">
+                      {incident.relatedCI.map(ci => (
+                        <SystemChip key={ci} name={ci} />
+                      ))}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-muted rounded-md p-3">
+                      <div className="text-xs text-muted-foreground mb-1">Blast Radius</div>
+                      <div className="text-sm font-medium text-foreground">
+                        {incident.relatedCI.length} CI{incident.relatedCI.length !== 1 ? 's' : ''} impacted
+                      </div>
+                    </div>
+                    <div className="bg-muted rounded-md p-3">
+                      <div className="text-xs text-muted-foreground mb-1">Related Changes</div>
+                      <div className="text-sm font-medium text-foreground">
+                        {incident.relatedChanges.length > 0 ? (
+                          <span className="text-primary">{incident.relatedChanges.length} linked</span>
+                        ) : (
+                          <span className="text-muted-foreground">None</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  {incident.relatedChanges.length > 0 && (
+                    <div className="text-xs text-foreground/85 bg-status-pending/10 border border-status-pending/20 rounded-md px-3 py-2">
+                      This incident has linked changes. Review them to determine if the incident was caused by a recent deployment.
+                    </div>
+                  )}
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
+          </Card>
 
           {/* Similar Incidents / Recurring Pattern */}
           {incident.isRecurring && (
-            <div className="bg-surface rounded-lg border border-status-pending/30 p-4 space-y-3">
+            <div className="bg-card rounded-lg border border-status-pending/30 p-4 space-y-3">
               <div className="flex items-center gap-2">
                 <Layers className="w-4 h-4 text-status-pending" />
                 <h3 className="text-sm font-medium text-status-pending">Recurring Pattern Detected</h3>
               </div>
-              <div className="bg-surface-raised rounded p-3 space-y-2">
-                <div className="text-sm text-text-primary leading-relaxed">
-                  This issue has been reported multiple times. The pattern matches previous occurrences with the same root cause category: <span className="font-medium text-text-primary">{incident.rootCauseCategory}</span>.
+              <div className="bg-muted rounded p-3 space-y-2">
+                <div className="text-sm text-foreground leading-relaxed">
+                  This issue has been reported multiple times. The pattern matches previous occurrences with the same root cause category: <span className="font-medium text-foreground">{incident.rootCauseCategory}</span>.
                 </div>
-                <div className="text-sm text-text-secondary">
+                <div className="text-sm text-foreground/80">
                   Consider a permanent fix or workflow adjustment to prevent recurrence. Review KB articles for documented remediation steps.
                 </div>
               </div>
@@ -453,7 +468,7 @@ export default function IncidentDetail() {
                   <div className="text-xs text-status-pending font-medium mb-1">Known Fix Available</div>
                   <div className="space-y-1">
                     {incident.kbArticles.map(kb => (
-                      <div key={kb} className="flex items-center gap-2 text-sm text-accent">
+                      <div key={kb} className="flex items-center gap-2 text-sm text-primary">
                         <BookOpen className="w-3.5 h-3.5" />{kb}
                       </div>
                     ))}
@@ -465,16 +480,16 @@ export default function IncidentDetail() {
 
           {/* Technical Remediation */}
           {remediation && (
-            <div className={`bg-surface rounded-lg border p-4 space-y-4 ${
+            <div className={`bg-card rounded-lg border p-4 space-y-4 ${
               (incident.isRecurring || isConfigFix)
                 ? 'border-accent/40 ring-1 ring-accent/20'
                 : 'border-border'
             }`}>
               <div className="flex items-center gap-2">
-                <Terminal className="w-4 h-4 text-accent" />
-                <h3 className="text-sm font-medium text-text-primary">Technical Remediation</h3>
+                <Terminal className="w-4 h-4 text-primary" />
+                <h3 className="text-sm font-medium text-foreground">Technical Remediation</h3>
                 {(incident.isRecurring || isConfigFix) && (
-                  <span className="ml-auto text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded-full bg-accent/15 text-accent">
+                  <span className="ml-auto text-xs font-semibold uppercase tracking-wider px-2 py-1 rounded-full bg-primary/15 text-primary">
                     {isConfigFix ? 'Config-Only Fix' : 'Known Pattern'}
                   </span>
                 )}
@@ -485,7 +500,7 @@ export default function IncidentDetail() {
                 <>
                   {/* Proposed Fix — code/diff block */}
                   <div>
-                    <div className="text-xs text-text-muted mb-2 font-medium uppercase tracking-wider">Proposed Fix</div>
+                    <div className="text-xs text-muted-foreground mb-2 font-medium uppercase tracking-wider">Proposed Fix</div>
                     <pre className="bg-[#0d1117] border border-border rounded-lg p-4 text-xs text-[#c9d1d9] font-mono leading-relaxed overflow-x-auto whitespace-pre">
                       {remediation.proposedFix}
                     </pre>
@@ -493,14 +508,14 @@ export default function IncidentDetail() {
 
                   {/* Execution Plan */}
                   <div>
-                    <div className="text-xs text-text-muted mb-2 font-medium uppercase tracking-wider">Execution Plan</div>
+                    <div className="text-xs text-muted-foreground mb-2 font-medium uppercase tracking-wider">Execution Plan</div>
                     <ol className="space-y-1.5">
                       {remediation.executionPlan.map((step, i) => (
-                        <li key={i} className="flex items-start gap-2.5">
-                          <span className="flex-shrink-0 w-5 h-5 rounded-full bg-accent/15 text-accent text-xs font-bold flex items-center justify-center mt-0.5">
+                        <li key={i} className="flex items-start gap-3">
+                          <span className="flex-shrink-0 w-5 h-5 rounded-full bg-primary/15 text-primary text-xs font-bold flex items-center justify-center mt-0.5">
                             {i + 1}
                           </span>
-                          <span className="text-sm text-text-primary leading-relaxed">{step}</span>
+                          <span className="text-sm text-foreground leading-relaxed">{step}</span>
                         </li>
                       ))}
                     </ol>
@@ -508,10 +523,10 @@ export default function IncidentDetail() {
 
                   {/* Blast Radius */}
                   <div>
-                    <div className="text-xs text-text-muted mb-2 font-medium uppercase tracking-wider">Blast Radius</div>
+                    <div className="text-xs text-muted-foreground mb-2 font-medium uppercase tracking-wider">Blast Radius</div>
                     <div className="flex flex-wrap gap-1.5">
                       {remediation.blastRadius.map((item) => (
-                        <span key={item} className="inline-flex items-center gap-1 px-2 py-1 rounded bg-surface-raised border border-border text-xs text-text-secondary">
+                        <span key={item} className="inline-flex items-center gap-1 px-2 py-1 rounded bg-muted border border-border text-xs text-foreground/80">
                           <AlertTriangle className="w-3 h-3 text-status-pending" />
                           {item}
                         </span>
@@ -521,19 +536,19 @@ export default function IncidentDetail() {
 
                   {/* Execution Mode + Approval + Safety grid */}
                   <div className="grid grid-cols-3 gap-3">
-                    <div className="bg-surface-raised rounded p-3">
-                      <div className="text-xs text-text-muted mb-1">Execution Mode</div>
-                      <div className="text-sm font-medium text-text-primary font-mono">{remediation.executionMode}</div>
+                    <div className="bg-muted rounded p-3">
+                      <div className="text-xs text-muted-foreground mb-1">Execution Mode</div>
+                      <div className="text-sm font-medium text-foreground font-mono">{remediation.executionMode}</div>
                     </div>
-                    <div className="bg-surface-raised rounded p-3">
-                      <div className="text-xs text-text-muted mb-1">Approval Required</div>
+                    <div className="bg-muted rounded p-3">
+                      <div className="text-xs text-muted-foreground mb-1">Approval Required</div>
                       <div className={`text-sm font-medium ${remediation.approvalRequired.required ? 'text-status-pending' : 'text-status-approved'}`}>
                         {remediation.approvalRequired.required ? 'Yes' : 'No'}
                       </div>
-                      <div className="text-[11px] text-text-muted mt-0.5 leading-tight">{remediation.approvalRequired.reason}</div>
+                      <div className="text-xs text-muted-foreground mt-0.5 leading-tight">{remediation.approvalRequired.reason}</div>
                     </div>
-                    <div className="bg-surface-raised rounded p-3">
-                      <div className="text-xs text-text-muted mb-1">Safe to Execute</div>
+                    <div className="bg-muted rounded p-3">
+                      <div className="text-xs text-muted-foreground mb-1">Safe to Execute</div>
                       <div className={`text-sm font-medium ${remediation.safeToExecute.safe ? 'text-status-approved' : 'text-status-escalated'}`}>
                         {remediation.safeToExecute.safe ? 'Yes' : 'No'} — {remediation.safeToExecute.confidence}%
                       </div>
@@ -545,14 +560,14 @@ export default function IncidentDetail() {
                 <>
                   {/* Simplified execution plan */}
                   <div>
-                    <div className="text-xs text-text-muted mb-2 font-medium uppercase tracking-wider">Remediation Plan</div>
+                    <div className="text-xs text-muted-foreground mb-2 font-medium uppercase tracking-wider">Remediation Plan</div>
                     <ol className="space-y-1.5">
                       {remediation.executionPlan.map((step, i) => (
-                        <li key={i} className="flex items-start gap-2.5">
-                          <span className="flex-shrink-0 w-5 h-5 rounded-full bg-accent/15 text-accent text-xs font-bold flex items-center justify-center mt-0.5">
+                        <li key={i} className="flex items-start gap-3">
+                          <span className="flex-shrink-0 w-5 h-5 rounded-full bg-primary/15 text-primary text-xs font-bold flex items-center justify-center mt-0.5">
                             {i + 1}
                           </span>
-                          <span className="text-sm text-text-primary leading-relaxed">{step}</span>
+                          <span className="text-sm text-foreground leading-relaxed">{step}</span>
                         </li>
                       ))}
                     </ol>
@@ -560,15 +575,15 @@ export default function IncidentDetail() {
 
                   {/* Compact approval status */}
                   <div className="grid grid-cols-2 gap-3">
-                    <div className="bg-surface-raised rounded p-3">
-                      <div className="text-xs text-text-muted mb-1">Approval Status</div>
+                    <div className="bg-muted rounded p-3">
+                      <div className="text-xs text-muted-foreground mb-1">Approval Status</div>
                       <div className={`text-sm font-medium ${remediation.approvalRequired.required ? 'text-status-pending' : 'text-status-approved'}`}>
                         {remediation.approvalRequired.required ? 'Approval Required' : 'Auto-Approved'}
                       </div>
-                      <div className="text-[11px] text-text-muted mt-0.5 leading-tight">{remediation.approvalRequired.reason}</div>
+                      <div className="text-xs text-muted-foreground mt-0.5 leading-tight">{remediation.approvalRequired.reason}</div>
                     </div>
-                    <div className="bg-surface-raised rounded p-3">
-                      <div className="text-xs text-text-muted mb-1">Safety Assessment</div>
+                    <div className="bg-muted rounded p-3">
+                      <div className="text-xs text-muted-foreground mb-1">Safety Assessment</div>
                       <div className={`text-sm font-medium ${remediation.safeToExecute.safe ? 'text-status-approved' : 'text-status-escalated'}`}>
                         {remediation.safeToExecute.safe ? 'Safe to Execute' : 'Needs Review'}
                       </div>
@@ -581,169 +596,28 @@ export default function IncidentDetail() {
         </div>
 
         {/* ── Right: Action Rail ── */}
-        <div className="space-y-4">
+        <div className="flex flex-col gap-5">
           {/* AI Re-analyze */}
-          <div className="bg-surface rounded-lg border border-border p-4 space-y-3">
-            <h3 className="text-xs font-medium text-text-muted uppercase tracking-wider">AI Analysis</h3>
-            <ReanalyzeButton
-              kind="incident"
-              entityIdOrTicket={incident.incidentId}
-              userRole={role}
-              mutate={triageAgent.mutate}
-              isPending={triageAgent.isPending}
-              isError={triageAgent.isError}
-              isSuccess={triageAgent.isSuccess}
-              error={triageAgent.error}
-              data={triageAgent.data}
-            />
-          </div>
+          <Card>
+            <CardHeader className="border-b">
+              <CardTitle className="text-sm font-semibold">AI Analysis</CardTitle>
+            </CardHeader>
+            <CardContent className="py-4">
+              <ReanalyzeButton
+                kind="incident"
+                entityIdOrTicket={incident.incidentId}
+                userRole={role}
+                mutate={triageAgent.mutate}
+                isPending={triageAgent.isPending}
+                isError={triageAgent.isError}
+                isSuccess={triageAgent.isSuccess}
+                error={triageAgent.error}
+                data={triageAgent.data}
+              />
+            </CardContent>
+          </Card>
 
-          <div className="bg-surface rounded-lg border border-border p-4 space-y-4">
-            <h3 className="text-xs font-medium text-text-muted uppercase tracking-wider">Actions <span className="text-accent">· {config.label}</span></h3>
-
-            {/* Available Now */}
-            {availableActions.length > 0 && (
-              <div className="space-y-2">
-                <h4 className="text-xs font-medium text-status-approved uppercase tracking-wider">Available Now</h4>
-                {availableActions.map(a => {
-                  const Icon = a.icon
-                  return (
-                    <button
-                      key={a.key}
-                      onClick={() => {
-                        const actionFn = (() => {
-                          if (a.key === 'trigger_fix') return () => {
-                            // Trigger allowed fix → move to monitoring/identified
-                            const nextStatus = incident.status === 'investigating' ? 'identified' : 'monitoring'
-                            updateStatus.mutate({ id: incident.incidentId, status: nextStatus })
-                            setGuardModal(null)
-                          }
-                          return undefined
-                        })()
-                        setGuardModal({ open: true, title: a.label, description: a.desc, action: actionFn })
-                      }}
-                      className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-sm font-medium ${a.style}`}
-                    >
-                      <Icon className="w-4 h-4" /> {a.label}
-                    </button>
-                  )
-                })}
-              </div>
-            )}
-
-            {/* Requires Approval */}
-            {requiresApproval.length > 0 && (
-              <>
-                <hr className="border-border" />
-                <div className="space-y-2">
-                  <h4 className="text-xs font-medium text-status-pending uppercase tracking-wider">Requires Approval</h4>
-                  {requiresApproval.map(blocked => (
-                    <div key={blocked.action} className="flex items-start gap-2 px-3 py-2 rounded-lg bg-status-pending/5 border border-status-pending/10 text-text-muted">
-                      <CheckCircle className="w-4 h-4 flex-shrink-0 mt-0.5 text-status-pending" />
-                      <div>
-                        <div className="text-sm font-medium text-text-secondary">{blocked.label}</div>
-                        <div className="text-xs">{blocked.reason}</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </>
-            )}
-
-            {/* Not Available */}
-            {notAvailable.length > 0 && (
-              <>
-                <hr className="border-border" />
-                <div className="space-y-2">
-                  <h4 className="text-xs font-medium text-text-muted uppercase tracking-wider">Not Available</h4>
-                  {notAvailable.map(blocked => (
-                    <div key={blocked.action} className="flex items-start gap-2 px-3 py-2 rounded-lg text-text-muted">
-                      <Ban className="w-4 h-4 flex-shrink-0 mt-0.5" />
-                      <div>
-                        <div className="text-sm font-medium">{blocked.label}</div>
-                        <div className="text-xs">{blocked.reason}</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
-
-          {/* Decision Impact — Approver only */}
-          {(role === 'approver' || role === 'admin') && (
-            <div className="bg-surface rounded-lg border border-accent/20 p-4 space-y-3 mt-4">
-              <h3 className="text-xs font-medium text-accent uppercase tracking-wider flex items-center gap-1.5">
-                <AlertTriangle className="w-3 h-3" />
-                Decision Impact
-              </h3>
-              <div className="space-y-2">
-                <div className="flex gap-2">
-                  <CheckCircle className="w-3 h-3 text-status-approved flex-shrink-0 mt-0.5" />
-                  <div>
-                    <div className="text-[10px] font-medium text-status-approved uppercase">If remediation approved</div>
-                    <p className="text-xs text-text-secondary">
-                      {remediation ? `Fix applied: ${remediation.executionMode}. ` : 'Recommended fix proceeds. '}
-                      {incident.severity === 'sev1' || incident.severity === 'sev2' ? 'Active incident resolved faster.' : 'Issue resolved.'}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <Ban className="w-3 h-3 text-status-denied flex-shrink-0 mt-0.5" />
-                  <div>
-                    <div className="text-[10px] font-medium text-status-denied uppercase">If denied</div>
-                    <p className="text-xs text-text-secondary">
-                      {incident.severity === 'sev1' ? 'Sev1 incident remains unresolved. May trigger executive escalation.' :
-                       incident.severity === 'sev2' ? 'Sev2 incident continues. Manual workaround needed.' :
-                       'Incident requires alternative remediation path.'}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <ArrowUpRight className="w-3 h-3 text-status-escalated flex-shrink-0 mt-0.5" />
-                  <div>
-                    <div className="text-[10px] font-medium text-status-escalated uppercase">If escalated</div>
-                    <p className="text-xs text-text-secondary">Routes to SRE Lead for review. Incident SLA clock continues.</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Support Artifact Actions — IT Support only */}
-          {role === 'it_support' && (
-            <div className="bg-surface rounded-lg border border-border p-4 space-y-2 mt-4">
-              <h3 className="text-xs font-medium text-text-muted uppercase tracking-wider">Support Artifacts</h3>
-              <button
-                onClick={() => setGuardModal({ open: true, title: 'Draft Work Note', description: `Generate an internal work note summarizing triage status, diagnosis, and next steps for ${incident.incidentId}.` })}
-                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium bg-accent/10 text-accent hover:bg-accent/20 transition-colors"
-              >
-                <ClipboardCopy className="w-4 h-4" /> Draft Work Note
-              </button>
-              <button
-                onClick={() => setGuardModal({ open: true, title: 'Draft Customer Reply', description: `Generate a customer-facing status update for ${incident.incidentId} with ETA and impact summary.` })}
-                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium bg-accent/10 text-accent hover:bg-accent/20 transition-colors"
-              >
-                <FileText className="w-4 h-4" /> Draft Customer Reply
-              </button>
-              <button
-                onClick={() => setGuardModal({ open: true, title: 'Prepare Escalation Note', description: `Generate an escalation summary for ${incident.incidentId} including severity, impact, attempted actions, and recommended next owner.` })}
-                className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium bg-status-escalated/10 text-status-escalated hover:bg-status-escalated/20 transition-colors"
-              >
-                <ArrowUpRight className="w-4 h-4" /> Prepare Escalation Note
-              </button>
-              {incident.kbArticles.length > 0 && (
-                <button
-                  onClick={() => setGuardModal({ open: true, title: 'Attach KB Article', description: `Link ${incident.kbArticles[0]} to ${incident.incidentId} and add remediation context from the article.` })}
-                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium bg-surface-raised text-text-secondary hover:bg-surface-overlay hover:text-text-primary transition-colors"
-                >
-                  <BookOpen className="w-4 h-4" /> Attach KB Article
-                </button>
-              )}
-            </div>
-          )}
-
-          {/* Contextual Assistant */}
+          {/* Mini assistant — sits high up so quick prompts are visible without scrolling */}
           <ContextualAssistant
             entityType="incident"
             entityId={incident.id}
@@ -764,6 +638,181 @@ export default function IncidentDetail() {
               { label: 'Draft response', prompt: `Draft a status update for ${incident.incidentId}` },
             ]}
           />
+
+          <Card>
+            <CardHeader className="border-b">
+              <div className="flex items-center justify-between gap-2">
+                <CardTitle className="text-sm font-semibold">Actions</CardTitle>
+                <Badge variant="secondary" className="text-[10px] uppercase tracking-wider">
+                  {config.label}
+                </Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-5 py-5">
+              {availableActions.length > 0 && (
+                <div className="flex flex-col gap-2.5">
+                  <RailLabel tone="success">Available now</RailLabel>
+                  <div className="flex flex-col gap-2">
+                    {availableActions.map((a) => {
+                      const Icon = a.icon
+                      return (
+                        <button
+                          key={a.key}
+                          onClick={() => {
+                            const actionFn = (() => {
+                              if (a.key === 'trigger_fix')
+                                return () => {
+                                  const nextStatus =
+                                    incident.status === 'investigating' ? 'identified' : 'monitoring'
+                                  updateStatus.mutate({
+                                    id: incident.incidentId,
+                                    status: nextStatus,
+                                  })
+                                  setGuardModal(null)
+                                }
+                              return undefined
+                            })()
+                            setGuardModal({
+                              open: true,
+                              title: a.label,
+                              description: a.desc,
+                              action: actionFn,
+                            })
+                          }}
+                          className={`flex h-11 items-center gap-3 rounded-md px-4 text-sm font-medium transition-colors ${a.style}`}
+                        >
+                          <Icon className="h-4 w-4 flex-shrink-0" />
+                          <span className="flex-1 text-left">{a.label}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {requiresApproval.length > 0 && (
+                <div className="flex flex-col gap-2.5">
+                  <RailLabel tone="warning">Requires approval</RailLabel>
+                  <div className="flex flex-col gap-2">
+                    {requiresApproval.map((blocked) => (
+                      <div
+                        key={blocked.action}
+                        className="flex items-start gap-3 rounded-md border border-status-pending/20 bg-status-pending/5 px-3 py-2.5"
+                      >
+                        <CheckCircle className="h-4 w-4 flex-shrink-0 mt-0.5 text-status-pending" />
+                        <div className="flex flex-col gap-1 min-w-0">
+                          <div className="text-sm font-medium text-foreground">{blocked.label}</div>
+                          <div className="text-xs text-muted-foreground leading-relaxed">
+                            {blocked.reason}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {notAvailable.length > 0 && (
+                <div className="flex flex-col gap-2.5">
+                  <RailLabel>Not available</RailLabel>
+                  <div className="flex flex-col gap-2">
+                    {notAvailable.map((blocked) => (
+                      <div
+                        key={blocked.action}
+                        className="flex items-start gap-3 rounded-md px-3 py-2.5 text-muted-foreground"
+                      >
+                        <Ban className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                        <div className="flex flex-col gap-1 min-w-0">
+                          <div className="text-sm font-medium text-foreground/80">{blocked.label}</div>
+                          <div className="text-xs leading-relaxed">{blocked.reason}</div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {(role === 'approver' || role === 'admin') && (
+            <Card>
+              <CardHeader className="border-b">
+                <CardTitle className="text-sm font-semibold flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4 text-primary" />
+                  Decision Impact
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-3 py-4">
+                <ImpactRow
+                  icon={<CheckCircle className="h-4 w-4 text-status-approved" />}
+                  label="If remediation approved"
+                  tone="text-status-approved"
+                  text={
+                    (remediation ? `Fix applied: ${remediation.executionMode}. ` : 'Recommended fix proceeds. ') +
+                    (incident.severity === 'sev1' || incident.severity === 'sev2'
+                      ? 'Active incident resolved faster.'
+                      : 'Issue resolved.')
+                  }
+                />
+                <ImpactRow
+                  icon={<Ban className="h-4 w-4 text-status-denied" />}
+                  label="If denied"
+                  tone="text-status-denied"
+                  text={
+                    incident.severity === 'sev1'
+                      ? 'Sev1 incident remains unresolved. May trigger executive escalation.'
+                      : incident.severity === 'sev2'
+                        ? 'Sev2 incident continues. Manual workaround needed.'
+                        : 'Incident requires alternative remediation path.'
+                  }
+                />
+                <ImpactRow
+                  icon={<ArrowUpRight className="h-4 w-4 text-status-escalated" />}
+                  label="If escalated"
+                  tone="text-status-escalated"
+                  text="Routes to SRE Lead for review. Incident SLA clock continues."
+                />
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Support Artifact Actions — IT Support only */}
+          {role === 'it_support' && (
+            <Card>
+              <CardHeader className="border-b">
+                <CardTitle className="text-sm font-semibold">Support Artifacts</CardTitle>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-2 py-4">
+                <button
+                  onClick={() => setGuardModal({ open: true, title: 'Draft Work Note', description: `Generate an internal work note summarizing triage status, diagnosis, and next steps for ${incident.incidentId}.` })}
+                  className="flex h-11 w-full items-center gap-3 rounded-md bg-primary/10 px-4 text-sm font-medium text-primary hover:bg-primary/20 transition-colors"
+                >
+                  <ClipboardCopy className="h-4 w-4 flex-shrink-0" /> <span className="flex-1 text-left">Draft Work Note</span>
+                </button>
+                <button
+                  onClick={() => setGuardModal({ open: true, title: 'Draft Customer Reply', description: `Generate a customer-facing status update for ${incident.incidentId} with ETA and impact summary.` })}
+                  className="flex h-11 w-full items-center gap-3 rounded-md bg-primary/10 px-4 text-sm font-medium text-primary hover:bg-primary/20 transition-colors"
+                >
+                  <FileText className="h-4 w-4 flex-shrink-0" /> <span className="flex-1 text-left">Draft Customer Reply</span>
+                </button>
+                <button
+                  onClick={() => setGuardModal({ open: true, title: 'Prepare Escalation Note', description: `Generate an escalation summary for ${incident.incidentId} including severity, impact, attempted actions, and recommended next owner.` })}
+                  className="flex h-11 w-full items-center gap-3 rounded-md bg-status-escalated/10 px-4 text-sm font-medium text-status-escalated hover:bg-status-escalated/20 transition-colors"
+                >
+                  <ArrowUpRight className="h-4 w-4 flex-shrink-0" /> <span className="flex-1 text-left">Prepare Escalation Note</span>
+                </button>
+                {incident.kbArticles.length > 0 && (
+                  <button
+                    onClick={() => setGuardModal({ open: true, title: 'Attach KB Article', description: `Link ${incident.kbArticles[0]} to ${incident.incidentId} and add remediation context from the article.` })}
+                    className="flex h-11 w-full items-center gap-3 rounded-md bg-muted px-4 text-sm font-medium text-foreground/85 hover:bg-muted/70 transition-colors"
+                  >
+                    <BookOpen className="h-4 w-4 flex-shrink-0" /> <span className="flex-1 text-left">Attach KB Article</span>
+                  </button>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
         </div>
       </div>
 
@@ -778,6 +827,64 @@ export default function IncidentDetail() {
           variant="info"
         />
       )}
+    </div>
+  )
+}
+
+// ─── Right rail helpers ─────────────────────────────────
+
+function RailLabel({
+  children,
+  tone,
+}: {
+  children: React.ReactNode
+  tone?: 'success' | 'warning'
+}) {
+  return (
+    <div
+      className={cn(
+        'text-xs font-semibold uppercase tracking-wider',
+        tone === 'success'
+          ? 'text-status-approved'
+          : tone === 'warning'
+            ? 'text-status-pending'
+            : 'text-muted-foreground',
+      )}
+    >
+      {children}
+    </div>
+  )
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="flex flex-col gap-1.5 min-w-0">
+      <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+        {label}
+      </div>
+      <div className="min-w-0">{children}</div>
+    </div>
+  )
+}
+
+function ImpactRow({
+  icon,
+  label,
+  tone,
+  text,
+}: {
+  icon: React.ReactNode
+  label: string
+  tone: string
+  text: string
+}) {
+  return (
+    <div className="flex items-start gap-3">
+      <span className="mt-0.5 flex-shrink-0">{icon}</span>
+      <div className="flex flex-col gap-1 min-w-0">
+        <div className={cn('text-xs font-semibold uppercase tracking-wider', tone)}>{label}</div>
+        <p className="text-sm leading-relaxed text-foreground/85">{text}</p>
+      </div>
     </div>
   )
 }

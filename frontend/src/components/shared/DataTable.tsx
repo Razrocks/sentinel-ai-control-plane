@@ -69,15 +69,19 @@ export function DataTable<T>({
   const pageSizeNow = table.getState().pagination.pageSize
 
   return (
-    <div className="space-y-10">
+    <div className="flex flex-col gap-6">
       {/* Search bar */}
-      <div className="relative max-w-md">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+      <div className="relative w-full max-w-xl">
+        <Search
+          className="absolute top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none"
+          style={{ left: '0.875rem' }}
+        />
         <Input
           value={globalFilter}
           onChange={(e) => setGlobalFilter(e.target.value)}
           placeholder={searchPlaceholder}
-          className="pl-10"
+          className="text-sm"
+          style={{ height: '2.75rem', paddingLeft: '2.75rem', paddingRight: '1rem' }}
         />
       </div>
 

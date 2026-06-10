@@ -16,7 +16,9 @@ import {
   Ban,
   ChevronRight,
   ChevronDown,
+  Search,
 } from 'lucide-react'
+import { Input } from '@/components/ui/input'
 import { useAuditEvents } from '@/hooks/useData'
 import { useAuditStream } from '@/hooks/useAuditStream'
 import { formatDate, cn } from '@/lib/utils'
@@ -139,10 +141,20 @@ export default function AuditTrail() {
   const [filter, setFilter] = useState<FilterType>('all')
   const [quickFilter, setQuickFilter] = useState<QuickFilter | null>(isAdmin ? 'governance' : null)
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [query, setQuery] = useState('')
 
   let filtered = filter === 'all' ? auditEvents : auditEvents.filter((e) => e.objectType === filter)
   if (quickFilter) {
     filtered = auditEvents.filter((e) => matchesQuickFilter(e, quickFilter))
+  }
+  const q = query.trim().toLowerCase()
+  if (q) {
+    filtered = filtered.filter((e) =>
+      e.actor.toLowerCase().includes(q) ||
+      e.action.toLowerCase().includes(q) ||
+      e.objectTitle.toLowerCase().includes(q) ||
+      (e.policyRule ?? '').toLowerCase().includes(q),
+    )
   }
 
   const policyEventCount = auditEvents.filter((e) => e.objectType === 'policy' || !!e.policyRule).length
@@ -150,15 +162,17 @@ export default function AuditTrail() {
   const escalationCount = auditEvents.filter((e) => e.result === 'escalated').length
 
   return (
-    <div className="space-y-12">
+    <div className="flex flex-col gap-10">
       {/* Header */}
-      <div className="mb-6 flex items-start justify-between gap-4">
-        <div>
-          <h1 className="text-3xl font-semibold text-foreground tracking-tight">Audit Trail</h1>
-          <p className="text-base text-muted-foreground mt-4">
+      <div className="flex items-start justify-between gap-4">
+        <div className="flex flex-col gap-3">
+          <h1 className="font-heading text-3xl font-medium tracking-tight text-foreground">
+            Audit Trail
+          </h1>
+          <p className="text-sm text-muted-foreground">
             {isAdmin
-              ? 'Governance event history — policy evaluations, blocks, access decisions, and restrictions'
-              : 'Complete decision and action history'}
+              ? 'Governance event history — policy evaluations, blocks, access decisions, and restrictions.'
+              : 'Complete decision and action history.'}
           </p>
         </div>
         {/* Live indicator */}
@@ -231,21 +245,36 @@ export default function AuditTrail() {
         </div>
       )}
 
-      {/* Type filters */}
-      <div className="flex flex-wrap items-center gap-2">
-        {filterDefs.map((f) => (
-          <Button
-            key={f.id}
-            variant={filter === f.id && !quickFilter ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => {
-              setFilter(f.id)
-              setQuickFilter(null)
-            }}
-          >
-            {f.label}
-          </Button>
-        ))}
+      {/* Type filters + search */}
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex flex-wrap items-center gap-2">
+          {filterDefs.map((f) => (
+            <Button
+              key={f.id}
+              variant={filter === f.id && !quickFilter ? 'default' : 'outline'}
+              size="sm"
+              onClick={() => {
+                setFilter(f.id)
+                setQuickFilter(null)
+              }}
+            >
+              {f.label}
+            </Button>
+          ))}
+        </div>
+        <div className="relative w-full lg:w-80">
+          <Search
+            className="pointer-events-none absolute top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground"
+            style={{ left: '0.875rem' }}
+          />
+          <Input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search actor, action, object, policy..."
+            style={{ height: '2.75rem', paddingLeft: '2.75rem', paddingRight: '1rem' }}
+          />
+        </div>
       </div>
 
       {/* Event table */}

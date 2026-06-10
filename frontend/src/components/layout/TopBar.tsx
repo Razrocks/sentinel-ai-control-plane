@@ -1,17 +1,25 @@
 /**
- * TopBar — search, environment, role badge, user menu.
+ * TopBar — header inside SidebarInset.
  *
- * Phase 4: bigger search input (h-10), user menu collapsed to avatar +
- * dropdown, environment + policy indicators pulled into compact pill row.
+ * Houses the sidebar collapse toggle, global search, environment chip,
+ * policy status pill, and user menu. Uses official shadcn primitives —
+ * no hand-built buttons.
  */
 import { useState } from 'react'
-import { Search, ChevronDown, LogOut, Shield, Settings as SettingsIcon, User } from 'lucide-react'
-import { cn } from '@/lib/utils'
+import {
+  Search,
+  ChevronDown,
+  LogOut,
+  Shield,
+  Settings as SettingsIcon,
+  User,
+} from 'lucide-react'
 import { useRole, roles, type Role } from '@/lib/roles'
 import { useAuth } from '@/lib/auth'
 import { useNavigate } from 'react-router-dom'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -20,6 +28,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import { cn } from '@/lib/utils'
 
 const environments = [
   { id: 'production', label: 'Production', color: 'bg-risk-critical' },
@@ -43,7 +52,6 @@ export function TopBar() {
     navigate('/login')
   }
 
-  // Compact initials for the user avatar.
   const initials =
     user?.name
       ?.split(' ')
@@ -53,16 +61,17 @@ export function TopBar() {
       .toUpperCase() ?? '?'
 
   return (
-    <header
-      className="fixed top-0 right-0 z-20 flex h-16 items-center gap-4 border-b border-border bg-card px-6"
-      style={{ left: '15rem' }}
-    >
+    <header className="sticky top-0 z-20 flex h-16 items-center gap-3 border-b border-border bg-background/80 backdrop-blur-md px-6">
       {/* Search */}
       <div className="relative flex-1 max-w-xl">
-        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <Search
+          className="absolute top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none"
+          style={{ left: '0.875rem' }}
+        />
         <Input
           placeholder="Search changes, incidents, requests..."
-          className="pl-10 bg-background border-border"
+          className="text-sm"
+          style={{ height: '2.5rem', paddingLeft: '2.75rem', paddingRight: '1rem' }}
         />
       </div>
 
@@ -70,7 +79,7 @@ export function TopBar() {
         {/* Environment selector */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="sm" className="gap-2 h-9">
+            <Button variant="outline" size="sm" className="gap-2">
               <span className={cn('h-2 w-2 rounded-full', activeEnv.color)} />
               <span>{activeEnv.label}</span>
               <ChevronDown className="h-3.5 w-3.5" />
@@ -88,7 +97,7 @@ export function TopBar() {
           </DropdownMenuContent>
         </DropdownMenu>
 
-        {/* Policy status — minimal pill */}
+        {/* Policy status — pill */}
         <div className="hidden md:flex items-center gap-1.5 px-3 h-9 rounded-md border border-border bg-secondary text-xs text-muted-foreground">
           <span className="h-2 w-2 rounded-full bg-status-approved" />
           <span>Policy Active</span>
@@ -97,25 +106,28 @@ export function TopBar() {
         {/* User menu */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button variant="ghost" size="sm" className="gap-2 h-9 pl-2 pr-3">
-              <div className="h-7 w-7 rounded-full bg-primary text-primary-foreground flex items-center justify-center text-xs font-semibold">
-                {initials}
-              </div>
-              <span className="hidden md:inline text-sm font-medium">{user?.name ?? 'Guest'}</span>
+            <Button variant="ghost" size="sm" className="gap-2 pl-1.5 pr-3">
+              <Avatar className="h-7 w-7">
+                <AvatarFallback className="bg-primary text-primary-foreground text-xs font-semibold">
+                  {initials}
+                </AvatarFallback>
+              </Avatar>
+              <span className="hidden md:inline text-sm font-medium">
+                {user?.name ?? 'Guest'}
+              </span>
               <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-64">
             <DropdownMenuLabel>
-              <div className="flex flex-col">
+              <div className="flex flex-col gap-0.5">
                 <span className="text-sm font-semibold text-foreground">{user?.name}</span>
-                <span className="text-xs text-muted-foreground normal-case tracking-normal">
+                <span className="text-xs text-muted-foreground font-normal normal-case tracking-normal">
                   {user?.email}
                 </span>
               </div>
             </DropdownMenuLabel>
             <DropdownMenuSeparator />
-
             <DropdownMenuItem disabled>
               <User className="h-4 w-4" />
               <span>Profile</span>
@@ -133,7 +145,7 @@ export function TopBar() {
                   <DropdownMenuItem
                     key={r.id}
                     onSelect={() => setRole(r.id as Role)}
-                    className={cn(role === r.id && 'bg-secondary')}
+                    className={cn(role === r.id && 'bg-accent')}
                   >
                     <Shield className="h-4 w-4" />
                     <span>{r.label}</span>
@@ -153,7 +165,10 @@ export function TopBar() {
             )}
 
             <DropdownMenuSeparator />
-            <DropdownMenuItem onSelect={handleLogout} className="text-destructive focus:text-destructive">
+            <DropdownMenuItem
+              onSelect={handleLogout}
+              variant="destructive"
+            >
               <LogOut className="h-4 w-4" />
               <span>Sign out</span>
             </DropdownMenuItem>

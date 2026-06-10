@@ -10,7 +10,7 @@ import type {
 // ---------------------------------------------------------------------------
 // Scenario 1: Safe low-risk change (approved, low blast radius)
 // Scenario 2: Risky schema change (escalated, high blast radius, blocked)
-// Scenario 3: ServiceNow IT incident (bounded fix, safe remediation)
+// Scenario 3: IT incident (bounded fix, safe remediation)
 // Scenario 4: Access request (pending manager approval)
 // ---------------------------------------------------------------------------
 
@@ -409,13 +409,13 @@ export const mockChanges: Change[] = [
 // ---------------------------------------------------------------------------
 
 export const mockIncidents: Incident[] = [
-  // --- Scenario 3: ServiceNow IT incident ---
+  // --- Scenario 3: IT incident ---
   {
     id: 'inc-001',
     incidentId: 'INC-2024-1205',
     title: 'Elevated 5xx error rate on payment-service /charge endpoint',
     description:
-      'ServiceNow alert: payment-service returning HTTP 503 for ~12% of requests to POST /v1/charge since 03:42 UTC. Upstream health checks passing. No recent deploys.',
+      'Monitoring alert: payment-service returning HTTP 503 for ~12% of requests to POST /v1/charge since 03:42 UTC. Upstream health checks passing. No recent deploys.',
     requester: 'sre-oncall',
     affectedService: 'payment-service',
     severity: 'sev2',
@@ -798,7 +798,7 @@ export const mockAuditEvents: AuditEvent[] = [
     objectTitle: 'Elevated 5xx error rate on payment-service /charge endpoint',
     policyRule: null,
     result: 'success',
-    details: 'ServiceNow incident synced to Sentinel.',
+    details: 'Incident synced to Sentinel from monitoring source.',
   },
   {
     id: 'gae-007',

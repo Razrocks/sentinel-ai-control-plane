@@ -1,15 +1,9 @@
 import { FastifyInstance } from 'fastify'
 
-// Integration health status — will be replaced with real MCP connections in Phase 8
+// Integration health status — stub for /api/settings/health. Real
+// integration rows live in /api/integrations (see integrations.ts) and
+// are sourced from the encrypted Integration table.
 const integrations = [
-  {
-    name: 'ServiceNow',
-    type: 'mcp',
-    status: 'connected' as const,
-    version: 'v2.1.0',
-    description: 'Incident and change management',
-    lastChecked: new Date().toISOString(),
-  },
   {
     name: 'GitHub Enterprise',
     type: 'mcp',

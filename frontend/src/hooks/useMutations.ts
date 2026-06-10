@@ -123,6 +123,67 @@ export function useApprovalDecision() {
   })
 }
 
+/**
+ * Attach a free-text note to an approval. Used during triage to capture
+ * rationale or ask for clarification before deciding.
+ */
+export function useApprovalAddNote() {
+  const queryClient = useQueryClient()
+  return useMutation<{ note: { id: string; content: string; actor: string; createdAt: string } }, Error, { id: string; content: string }>({
+    mutationFn: async ({ id, content }) => {
+      return apiFetch(`/approvals/${id}/note`, {
+        method: 'POST',
+        body: JSON.stringify({ content }),
+      })
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['approvals'] })
+      queryClient.invalidateQueries({ queryKey: ['auditEvents'] })
+    },
+  })
+}
+
+/**
+ * Escalate an approval to a senior reviewer. Bumps version, sets status to
+ * `escalated`, writes audit + note with reason.
+ */
+export function useApprovalEscalate() {
+  const queryClient = useQueryClient()
+  return useMutation<{ approval: unknown }, Error, { id: string; reason: string; expectedVersion?: number }>({
+    mutationFn: async ({ id, reason, expectedVersion }) => {
+      try {
+        return await apiFetch(`/approvals/${id}/escalate`, {
+          method: 'POST',
+          headers:
+            typeof expectedVersion === 'number'
+              ? { 'If-Match': `"${expectedVersion}"` }
+              : undefined,
+          body: JSON.stringify({ reason, expectedVersion }),
+        })
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 412) {
+          const body = err.body as { expectedVersion?: number; currentVersion?: number } | undefined
+          throw new ApprovalConflictError(
+            id,
+            body?.expectedVersion ?? expectedVersion ?? -1,
+            body?.currentVersion ?? -1,
+          )
+        }
+        throw err
+      }
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['approvals'] })
+      queryClient.invalidateQueries({ queryKey: ['auditEvents'] })
+    },
+    onError: async (err) => {
+      if (err instanceof ApprovalConflictError) {
+        await queryClient.refetchQueries({ queryKey: ['approvals'], type: 'active' })
+      }
+    },
+  })
+}
+
 // ─── Change Mutations ───────────────────────────────────
 
 /**
@@ -311,6 +372,73 @@ export function useReviewAccessRequestAgent() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['accessRequests'] })
+      queryClient.invalidateQueries({ queryKey: ['auditEvents'] })
+    },
+  })
+}
+
+// ─── Policy Rule Mutations ──────────────────────────────
+
+/**
+ * Create a new policy rule. Admin-only. Active rules are picked up by
+ * agent context on next skill invocation (no extra wiring needed).
+ */
+export function useCreatePolicyRule() {
+  const queryClient = useQueryClient()
+  return useMutation<import('@/types').PolicyRule, Error, import('@/types').PolicyRuleInput>({
+    mutationFn: async (body) => {
+      return apiFetch<import('@/types').PolicyRule>('/policies', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      })
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['policies'] })
+      queryClient.invalidateQueries({ queryKey: ['auditEvents'] })
+    },
+  })
+}
+
+/**
+ * Update an existing policy rule. Admin-only. Optimistic concurrency via
+ * `expectedVersion` (sent as both If-Match header and body field).
+ */
+export function useUpdatePolicyRule() {
+  const queryClient = useQueryClient()
+  return useMutation<
+    import('@/types').PolicyRule,
+    Error,
+    { id: string } & Partial<import('@/types').PolicyRuleInput>
+  >({
+    mutationFn: async ({ id, expectedVersion, ...body }) => {
+      return apiFetch<import('@/types').PolicyRule>(`/policies/${id}`, {
+        method: 'PATCH',
+        headers:
+          typeof expectedVersion === 'number'
+            ? { 'If-Match': `"${expectedVersion}"` }
+            : undefined,
+        body: JSON.stringify({ ...body, expectedVersion }),
+      })
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['policies'] })
+      queryClient.invalidateQueries({ queryKey: ['auditEvents'] })
+    },
+  })
+}
+
+/**
+ * Disable (soft-delete) a policy rule. Pass `hard: true` to permanently
+ * remove the row. Disabled rules are excluded from agent context.
+ */
+export function useDeletePolicyRule() {
+  const queryClient = useQueryClient()
+  return useMutation<unknown, Error, { id: string; hard?: boolean }>({
+    mutationFn: async ({ id, hard }) => {
+      return apiFetch(`/policies/${id}${hard ? '?hard=true' : ''}`, { method: 'DELETE' })
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['policies'] })
       queryClient.invalidateQueries({ queryKey: ['auditEvents'] })
     },
   })

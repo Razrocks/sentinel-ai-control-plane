@@ -1,7 +1,18 @@
+/**
+ * Login — preset-style auth card.
+ *
+ * shadcn primitives throughout: Card, Input, Label, Button, Alert.
+ * Quick-login grid uses outline Buttons so each one looks tappable.
+ */
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Shield, LogIn } from 'lucide-react'
+import { Shield, LogIn, AlertCircle } from 'lucide-react'
 import { useAuth } from '@/lib/auth'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Alert, AlertDescription } from '@/components/ui/alert'
 
 const demoAccounts = [
   { email: 'operator@sentinel.dev', label: 'Operator', desc: 'Triage & assess' },
@@ -27,8 +38,9 @@ export default function Login() {
     try {
       await login(email, password)
       navigate('/')
-    } catch (err: any) {
-      setError(err?.message?.includes('Invalid') ? 'Invalid email or password' : 'Login failed')
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : ''
+      setError(msg.includes('Invalid') ? 'Invalid email or password' : 'Login failed')
     } finally {
       setIsSubmitting(false)
     }
@@ -37,7 +49,6 @@ export default function Login() {
   function handleQuickLogin(accountEmail: string) {
     setEmail(accountEmail)
     setPassword('password')
-    // Auto-submit after setting
     setError('')
     setIsSubmitting(true)
     login(accountEmail, 'password')
@@ -47,76 +58,99 @@ export default function Login() {
   }
 
   return (
-    <div className="min-h-screen bg-bg-primary flex items-center justify-center p-4">
-      <div className="w-full max-w-md space-y-8">
-        {/* Logo */}
-        <div className="text-center">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-accent/10 mb-4">
-            <Shield className="w-8 h-8 text-accent" />
+    <div className="min-h-screen bg-background flex items-center justify-center p-4">
+      <div className="w-full max-w-md flex flex-col gap-8">
+        {/* Brand */}
+        <div className="flex flex-col items-center text-center gap-3">
+          <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/15 text-primary">
+            <Shield className="h-7 w-7" />
           </div>
-          <h1 className="text-3xl font-bold text-text-primary">Sentinel</h1>
-          <p className="text-text-secondary mt-2">Policy-enforced operational control plane</p>
+          <h1 className="font-heading text-3xl font-medium tracking-tight text-foreground">
+            Sentinel
+          </h1>
+          <p className="text-sm text-muted-foreground">
+            Policy-enforced operational control plane
+          </p>
         </div>
 
-        {/* Login Form */}
-        <form onSubmit={handleSubmit} className="bg-bg-secondary border border-border-primary rounded-xl p-6 space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-text-secondary mb-1.5">Email</label>
-            <input
-              type="email"
-              value={email}
-              onChange={e => setEmail(e.target.value)}
-              className="w-full px-3 py-2 bg-bg-primary border border-border-primary rounded-lg text-text-primary placeholder-text-tertiary focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent"
-              placeholder="email@sentinel.dev"
-              required
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-text-secondary mb-1.5">Password</label>
-            <input
-              type="password"
-              value={password}
-              onChange={e => setPassword(e.target.value)}
-              className="w-full px-3 py-2 bg-bg-primary border border-border-primary rounded-lg text-text-primary placeholder-text-tertiary focus:outline-none focus:border-accent focus:ring-1 focus:ring-accent"
-              placeholder="••••••••"
-              required
-            />
-          </div>
+        {/* Login form */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Sign in</CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-4">
+            <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="email">Email</Label>
+                <Input
+                  id="email"
+                  type="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="email@sentinel.dev"
+                  required
+                  style={{ height: '2.5rem' }}
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="password">Password</Label>
+                <Input
+                  id="password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder="••••••••"
+                  required
+                  style={{ height: '2.5rem' }}
+                />
+              </div>
 
-          {error && (
-            <div className="text-red-400 text-sm bg-red-400/10 rounded-lg px-3 py-2">
-              {error}
+              {error && (
+                <Alert variant="destructive">
+                  <AlertCircle />
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              )}
+
+              <Button type="submit" disabled={isSubmitting} className="w-full" size="lg">
+                <LogIn />
+                {isSubmitting ? 'Signing in...' : 'Sign in'}
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+
+        {/* Quick login */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Quick login · demo accounts
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="flex flex-col gap-3">
+            <div className="grid grid-cols-2 gap-2">
+              {demoAccounts.map((account) => (
+                <Button
+                  key={account.email}
+                  type="button"
+                  variant="outline"
+                  onClick={() => handleQuickLogin(account.email)}
+                  disabled={isSubmitting}
+                  className="h-auto flex-col items-start py-3 gap-1 text-left"
+                >
+                  <span className="text-sm font-medium text-foreground">{account.label}</span>
+                  <span className="text-xs text-muted-foreground font-normal">{account.desc}</span>
+                </Button>
+              ))}
             </div>
-          )}
-
-          <button
-            type="submit"
-            disabled={isSubmitting}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-accent hover:bg-accent/90 disabled:opacity-50 text-white font-medium rounded-lg transition-colors"
-          >
-            <LogIn className="w-4 h-4" />
-            {isSubmitting ? 'Signing in...' : 'Sign in'}
-          </button>
-        </form>
-
-        {/* Quick Login */}
-        <div className="bg-bg-secondary border border-border-primary rounded-xl p-6">
-          <p className="text-xs font-medium text-text-tertiary uppercase tracking-wider mb-3">Quick login — demo accounts</p>
-          <div className="grid grid-cols-2 gap-2">
-            {demoAccounts.map(account => (
-              <button
-                key={account.email}
-                onClick={() => handleQuickLogin(account.email)}
-                disabled={isSubmitting}
-                className="flex flex-col items-start px-3 py-2.5 bg-bg-primary hover:bg-bg-tertiary border border-border-primary rounded-lg transition-colors text-left disabled:opacity-50"
-              >
-                <span className="text-sm font-medium text-text-primary">{account.label}</span>
-                <span className="text-xs text-text-tertiary">{account.desc}</span>
-              </button>
-            ))}
-          </div>
-          <p className="text-xs text-text-tertiary mt-3 text-center">All accounts use password: <code className="text-text-secondary">password</code></p>
-        </div>
+            <p className="text-xs text-muted-foreground text-center">
+              All accounts use password:{' '}
+              <code className="text-foreground rounded bg-muted px-1.5 py-0.5 font-mono">
+                password
+              </code>
+            </p>
+          </CardContent>
+        </Card>
       </div>
     </div>
   )

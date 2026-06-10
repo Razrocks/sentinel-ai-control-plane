@@ -58,6 +58,12 @@ export interface T1bPolicyBundle {
     decision: string
     scope: string
     appliesTo: string[]
+    /** Why this rule exists. Agents quote this when explaining enforcement. */
+    rationale?: string | null
+    /** Concrete examples the skill can pattern-match against the candidate. */
+    examples?: string[]
+    /** Lightweight category tags surfaced for filtering. */
+    tags?: string[]
   }>
   activeFreezes: Array<{
     id: string

@@ -390,11 +390,13 @@ function ConnectWizard({ type, onClose }: { type: string; onClose: () => void })
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Connect {TYPE_LABELS[type] ?? type}</DialogTitle>
+          <DialogTitle className="text-lg">Connect {TYPE_LABELS[type] ?? type}</DialogTitle>
           <DialogDescription>
-            <Stepper current={step} />
+            Finish setup in three quick steps.
           </DialogDescription>
+          <Stepper current={step} />
         </DialogHeader>
+        <Separator className="my-2" />
 
         {step === 'creds' && (
           <CredsStep
@@ -509,30 +511,38 @@ function Stepper({ current }: { current: WizardStep }) {
   const order: WizardStep[] = ['creds', 'scopes', 'webhooks']
   const currentIdx = current === 'done' ? order.length : order.indexOf(current)
   return (
-    <div className="flex items-center gap-2 mt-1">
-      {order.map((s, idx) => (
-        <div key={s} className="flex items-center gap-2">
-          <div
-            className={cn(
-              'flex h-5 w-5 items-center justify-center rounded-full text-[10px] font-semibold',
-              idx <= currentIdx
-                ? 'bg-primary text-primary-foreground'
-                : 'bg-secondary text-muted-foreground',
+    <div className="mt-3 flex items-center gap-2">
+      {order.map((s, idx) => {
+        const isDone = idx < currentIdx
+        const isCurrent = idx === currentIdx
+        return (
+          <div key={s} className="flex items-center gap-2 flex-1 last:flex-none">
+            <div className="flex items-center gap-2">
+              <div
+                className={cn(
+                  'flex h-7 w-7 items-center justify-center rounded-full text-xs font-semibold ring-2 transition-colors flex-shrink-0',
+                  isDone && 'bg-status-approved text-white ring-status-approved/30',
+                  isCurrent && 'bg-primary text-primary-foreground ring-primary/30',
+                  !isDone && !isCurrent && 'bg-secondary text-muted-foreground ring-border',
+                )}
+              >
+                {isDone ? <CheckCircle2 className="h-3.5 w-3.5" /> : idx + 1}
+              </div>
+              <span
+                className={cn(
+                  'text-sm whitespace-nowrap',
+                  isCurrent ? 'text-foreground font-semibold' : 'text-muted-foreground',
+                )}
+              >
+                {STEP_LABELS[s]}
+              </span>
+            </div>
+            {idx < order.length - 1 && (
+              <div className={cn('h-px flex-1 min-w-[1.5rem]', isDone ? 'bg-status-approved/40' : 'bg-border')} />
             )}
-          >
-            {idx + 1}
           </div>
-          <span
-            className={cn(
-              'text-xs',
-              idx === currentIdx ? 'text-foreground font-medium' : 'text-muted-foreground',
-            )}
-          >
-            {STEP_LABELS[s]}
-          </span>
-          {idx < order.length - 1 && <span className="text-muted-foreground/40">·</span>}
-        </div>
-      ))}
+        )
+      })}
     </div>
   )
 }
@@ -567,8 +577,8 @@ function CredsStep({
   error: string | null
 }) {
   return (
-    <div className="space-y-4">
-      <div className="space-y-1.5">
+    <div className="flex flex-col gap-5">
+      <div className="flex flex-col gap-2">
         <Label htmlFor="display-name">Display name</Label>
         <Input
           id="display-name"
@@ -577,7 +587,7 @@ function CredsStep({
         />
       </div>
 
-      <div className="space-y-1.5">
+      <div className="flex flex-col gap-2">
         <Label htmlFor="credential">
           {type === 'github' && 'Personal Access Token (PAT)'}
           {type === 'slack' && 'Bot User OAuth Token'}
@@ -617,7 +627,7 @@ function CredsStep({
       </div>
 
       {needsWebhookSecret && (
-        <div className="space-y-1.5">
+        <div className="flex flex-col gap-2">
           <Label htmlFor="webhook-secret">
             {type === 'sentry' ? 'Client Secret' : 'Signing secret'}
           </Label>
@@ -696,7 +706,7 @@ function ScopesStep({
   type: string
 }) {
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-5">
       <p className="text-sm text-muted-foreground">
         Select the {type === 'github' ? 'repositories' : type === 'slack' ? 'channels' : 'scopes'}{' '}
         Sentinel should watch.
@@ -761,7 +771,7 @@ function WebhooksStep({
   error: string | null
 }) {
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-5">
       <p className="text-sm text-muted-foreground">
         {type === 'slack' &&
           'Slack does not support API-side webhook registration. Paste the delivery URL below into your Slack app config — Sentinel just records the channels you picked.'}
@@ -771,7 +781,7 @@ function WebhooksStep({
           'Sentinel will register a webhook on each selected scope pointing to its public URL.'}
       </p>
 
-      <div className="space-y-1.5">
+      <div className="flex flex-col gap-2">
         <Label htmlFor="public-url">Public base URL (Sentinel backend)</Label>
         <Input
           id="public-url"
@@ -842,7 +852,7 @@ function DoneStep({
   result: { registered: number; failures: { scopeId: string; error: string }[] }
 }) {
   return (
-    <div className="space-y-4">
+    <div className="flex flex-col gap-5">
       <Alert variant="success">
         <CheckCircle2 className="h-4 w-4" />
         <AlertTitle>

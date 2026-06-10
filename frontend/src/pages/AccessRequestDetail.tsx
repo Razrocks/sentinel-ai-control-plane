@@ -28,6 +28,9 @@ import type { AccessRequest } from '@/types'
 import { RiskBadge, ApprovalBadge, PolicyBadge, SystemChip, ActionGuardModal, ContextualAssistant, ReanalyzeButton } from '@/components/shared'
 import { formatDate } from '@/lib/utils'
 import { useRole } from '@/lib/roles'
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Badge } from '@/components/ui/badge'
+import { Accordion, AccordionItem, AccordionTrigger, AccordionContent } from '@/components/ui/accordion'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -37,8 +40,8 @@ function getRecommendedNextStep(request: AccessRequest) {
   if (request.managerApprovalRequired && request.managerApproval === 'pending') {
     return {
       icon: Send,
-      color: 'text-accent',
-      bg: 'bg-accent/10 border-accent/20',
+      color: 'text-primary',
+      bg: 'bg-primary/10 border-accent/20',
       label: 'Route to manager',
       detail: `Manager approval is the next gate — route to ${request.manager}.`,
     }
@@ -50,8 +53,8 @@ function getRecommendedNextStep(request: AccessRequest) {
   ) {
     return {
       icon: ArrowUpRight,
-      color: 'text-accent',
-      bg: 'bg-accent/10 border-accent/20',
+      color: 'text-primary',
+      bg: 'bg-primary/10 border-accent/20',
       label: 'Route to system owner',
       detail: `Manager approved — ${request.systemOwner} sign-off needed.`,
     }
@@ -176,7 +179,7 @@ function StepIcon({ status, denied }: { status: StepStatus; denied?: boolean }) 
   if (denied) return <XCircle className="w-5 h-5 text-risk-critical" />
   if (status === 'completed') return <CheckCircle className="w-5 h-5 text-status-approved" />
   if (status === 'active') return <Clock className="w-5 h-5 text-status-pending" />
-  return <Lock className="w-5 h-5 text-text-muted/40" />
+  return <Lock className="w-5 h-5 text-muted-foreground/40" />
 }
 
 function stepLineColor(status: StepStatus) {
@@ -206,7 +209,7 @@ export default function AccessRequestDetail() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <p className="text-text-muted">Loading access request...</p>
+        <p className="text-muted-foreground">Loading access request...</p>
       </div>
     )
   }
@@ -214,7 +217,7 @@ export default function AccessRequestDetail() {
   if (!request) {
     return (
       <div className="flex items-center justify-center h-64">
-        <p className="text-text-muted">Access request not found</p>
+        <p className="text-muted-foreground">Access request not found</p>
       </div>
     )
   }
@@ -231,7 +234,7 @@ export default function AccessRequestDetail() {
       permission: 'route_manager',
       label: 'Route to Manager',
       icon: Send,
-      style: 'bg-accent/10 text-accent hover:bg-accent/20',
+      style: 'bg-primary/10 text-primary hover:bg-primary/20',
       desc: `Send this access request to ${request.manager} for approval.`,
       variant: 'info' as const,
       disabled: false,
@@ -241,7 +244,7 @@ export default function AccessRequestDetail() {
       permission: 'route_owner',
       label: 'Route to Owner',
       icon: ArrowUpRight,
-      style: 'bg-surface-raised text-text-secondary hover:bg-surface-overlay hover:text-text-primary',
+      style: 'bg-muted text-foreground/80 hover:bg-primary hover:text-foreground',
       desc: `Send this access request to ${request.systemOwner} for system owner approval.`,
       variant: 'info' as const,
       disabled: false,
@@ -272,7 +275,7 @@ export default function AccessRequestDetail() {
       permission: 'request_info',
       label: 'Request More Info',
       icon: MessageSquare,
-      style: 'bg-surface-raised text-text-secondary hover:bg-surface-overlay hover:text-text-primary',
+      style: 'bg-muted text-foreground/80 hover:bg-primary hover:text-foreground',
       disabled: false,
       desc: 'Ask the requester for additional information.',
       variant: 'info' as const,
@@ -301,18 +304,18 @@ export default function AccessRequestDetail() {
   const NextStepIcon = nextStep.icon
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col gap-10">
       {/* Header */}
       <div className="flex items-start gap-4">
         <Link
           to="/access-requests"
-          className="mt-1 p-1 rounded hover:bg-surface-raised transition-colors"
+          className="mt-1 flex h-9 w-9 items-center justify-center rounded-md hover:bg-muted transition-colors"
         >
-          <ArrowLeft className="w-5 h-5 text-text-muted" />
+          <ArrowLeft className="h-5 w-5 text-muted-foreground" />
         </Link>
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-3 mb-1">
-            <span className="text-sm text-text-muted font-mono">{request.requestId}</span>
+        <div className="flex-1 min-w-0 flex flex-col gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-sm font-mono text-muted-foreground">{request.requestId}</span>
             <RiskBadge level={request.riskLevel} />
             <ApprovalBadge
               state={
@@ -325,10 +328,10 @@ export default function AccessRequestDetail() {
             />
             <PolicyBadge decision={request.policyDecision} />
           </div>
-          <h1 className="text-xl font-semibold text-text-primary break-words">
+          <h1 className="font-heading text-3xl font-medium tracking-tight text-foreground break-words">
             {request.requester} &rarr; {request.requestedSystem}
           </h1>
-          <p className="text-sm text-text-secondary mt-1">
+          <p className="text-sm text-muted-foreground">
             Requesting {request.requestedRole} access
           </p>
         </div>
@@ -338,41 +341,41 @@ export default function AccessRequestDetail() {
       <div className="grid grid-cols-[280px_1fr_280px] gap-5">
         {/* ---- LEFT: Request context ---- */}
         <div>
-          <div className="bg-surface rounded-lg border border-border p-4 space-y-4">
-            <h3 className="text-xs font-medium text-text-muted uppercase tracking-wider">
+          <div className="bg-card rounded-lg border border-border p-4 space-y-4">
+            <h3 className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
               Request Details
             </h3>
             <div className="space-y-3">
               <div>
-                <div className="text-xs text-text-muted">Requester</div>
-                <div className="text-sm text-text-primary">{request.requester}</div>
-                <div className="text-xs text-text-muted">{request.requesterEmail}</div>
+                <div className="text-xs text-muted-foreground">Requester</div>
+                <div className="text-sm text-foreground">{request.requester}</div>
+                <div className="text-xs text-muted-foreground">{request.requesterEmail}</div>
               </div>
               <div>
-                <div className="text-xs text-text-muted">Requested System</div>
+                <div className="text-xs text-muted-foreground">Requested System</div>
                 <SystemChip name={request.requestedSystem} />
               </div>
               <div>
-                <div className="text-xs text-text-muted">Requested Role</div>
-                <div className="text-sm text-text-primary">{request.requestedRole}</div>
+                <div className="text-xs text-muted-foreground">Requested Role</div>
+                <div className="text-sm text-foreground">{request.requestedRole}</div>
               </div>
               <div>
-                <div className="text-xs text-text-muted">Justification</div>
-                <div className="text-sm text-text-secondary leading-relaxed">
+                <div className="text-xs text-muted-foreground">Justification</div>
+                <div className="text-sm text-foreground/80 leading-relaxed">
                   {request.justification}
                 </div>
               </div>
               <div>
-                <div className="text-xs text-text-muted">Manager</div>
-                <div className="text-sm text-text-primary">{request.manager}</div>
+                <div className="text-xs text-muted-foreground">Manager</div>
+                <div className="text-sm text-foreground">{request.manager}</div>
               </div>
               <div>
-                <div className="text-xs text-text-muted">System Owner</div>
-                <div className="text-sm text-text-primary">{request.systemOwner}</div>
+                <div className="text-xs text-muted-foreground">System Owner</div>
+                <div className="text-sm text-foreground">{request.systemOwner}</div>
               </div>
               <div>
-                <div className="text-xs text-text-muted">Requested</div>
-                <div className="text-sm text-text-secondary">{formatDate(request.createdAt)}</div>
+                <div className="text-xs text-muted-foreground">Requested</div>
+                <div className="text-sm text-foreground/80">{formatDate(request.createdAt)}</div>
               </div>
             </div>
           </div>
@@ -389,21 +392,26 @@ export default function AccessRequestDetail() {
               <div className={`text-sm font-semibold ${nextStep.color}`}>
                 Recommended Next Step
               </div>
-              <div className="text-sm text-text-primary font-medium mt-0.5">
+              <div className="text-sm text-foreground font-medium mt-0.5">
                 {nextStep.label}
               </div>
-              <div className="text-xs text-text-secondary mt-0.5">{nextStep.detail}</div>
+              <div className="text-xs text-foreground/80 mt-0.5">{nextStep.detail}</div>
             </div>
           </div>
 
-          {/* Eligibility & Policy Evaluation */}
-          <div className="bg-surface rounded-lg border border-border p-4 space-y-4">
-            <h3 className="text-sm font-medium text-text-primary">
+          {/* Main detail sections in collapsible accordion so users see only
+              what they need. Eligibility + Approval Chain open by default,
+              Grant Scope and What Happens Next collapse out of the way. */}
+          <Card className="py-0">
+          <Accordion type="multiple" defaultValue={['eligibility', 'chain']}>
+          <AccordionItem value="eligibility" className="border-b last:border-b-0">
+            <AccordionTrigger className="px-6 text-sm font-semibold">
               Eligibility &amp; Policy Evaluation
-            </h3>
+            </AccordionTrigger>
+            <AccordionContent className="px-6 pb-5 flex flex-col gap-4">
             <div className="grid grid-cols-2 gap-4">
-              <div className="bg-surface-raised rounded p-3">
-                <div className="text-xs text-text-muted mb-1">Entitlement Check</div>
+              <div className="bg-muted rounded p-3">
+                <div className="text-xs text-muted-foreground mb-1">Entitlement Check</div>
                 <div
                   className={`text-sm font-medium ${
                     request.entitlementCheck === 'eligible'
@@ -420,8 +428,8 @@ export default function AccessRequestDetail() {
                       : 'Review Required'}
                 </div>
               </div>
-              <div className="bg-surface-raised rounded p-3">
-                <div className="text-xs text-text-muted mb-1">Auto-Grant Eligible</div>
+              <div className="bg-muted rounded p-3">
+                <div className="text-xs text-muted-foreground mb-1">Auto-Grant Eligible</div>
                 <div
                   className={`text-sm font-medium ${
                     request.autoGrantAllowed ? 'text-status-approved' : 'text-risk-high'
@@ -432,9 +440,9 @@ export default function AccessRequestDetail() {
               </div>
             </div>
 
-            <div className="bg-surface-raised rounded p-4">
-              <div className="text-xs text-text-muted mb-2">Policy Decision Reason</div>
-              <div className="text-sm text-text-primary leading-relaxed">{request.reason}</div>
+            <div className="bg-muted rounded p-4">
+              <div className="text-xs text-muted-foreground mb-2">Policy Decision Reason</div>
+              <div className="text-sm text-foreground leading-relaxed">{request.reason}</div>
             </div>
 
             {request.entitlementCheck === 'ineligible' && (
@@ -445,82 +453,90 @@ export default function AccessRequestDetail() {
                 </span>
               </div>
             )}
-          </div>
+          </AccordionContent>
+          </AccordionItem>
 
           {/* Grant Scope — Access Approver / Approver / Admin */}
           {(role === 'access_approver' || role === 'approver' || role === 'admin') && (
-            <div className="bg-surface rounded-lg border border-accent/20 p-4 space-y-3">
-              <h3 className="text-sm font-medium text-accent flex items-center gap-2">
-                <KeyRound className="w-4 h-4" />
-                Grant Scope
-              </h3>
+            <AccordionItem value="grant_scope" className="border-b last:border-b-0">
+              <AccordionTrigger className="px-6 text-sm font-semibold">
+                <span className="flex items-center gap-2">
+                  <KeyRound className="h-4 w-4 text-primary" />
+                  Grant Scope
+                </span>
+              </AccordionTrigger>
+              <AccordionContent className="px-6 pb-5 flex flex-col gap-3">
               <div className="grid grid-cols-2 gap-3">
-                <div className="bg-surface-raised rounded p-2.5">
-                  <div className="flex items-center gap-1.5 mb-1">
-                    <Database className="w-3 h-3 text-text-muted" />
-                    <span className="text-[10px] text-text-muted uppercase tracking-wider">System</span>
+                <div className="bg-muted rounded p-3">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Database className="w-3 h-3 text-muted-foreground" />
+                    <span className="text-xs text-muted-foreground uppercase tracking-wider">System</span>
                   </div>
-                  <div className="text-sm text-text-primary font-mono">{request.requestedSystem}</div>
+                  <div className="text-sm text-foreground font-mono">{request.requestedSystem}</div>
                 </div>
-                <div className="bg-surface-raised rounded p-2.5">
-                  <div className="flex items-center gap-1.5 mb-1">
-                    <Shield className="w-3 h-3 text-text-muted" />
-                    <span className="text-[10px] text-text-muted uppercase tracking-wider">Role</span>
+                <div className="bg-muted rounded p-3">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Shield className="w-3 h-3 text-muted-foreground" />
+                    <span className="text-xs text-muted-foreground uppercase tracking-wider">Role</span>
                   </div>
-                  <div className="text-sm text-text-primary">{request.requestedRole}</div>
+                  <div className="text-sm text-foreground">{request.requestedRole}</div>
                 </div>
-                <div className="bg-surface-raised rounded p-2.5">
-                  <div className="flex items-center gap-1.5 mb-1">
-                    <Timer className="w-3 h-3 text-text-muted" />
-                    <span className="text-[10px] text-text-muted uppercase tracking-wider">Duration</span>
+                <div className="bg-muted rounded p-3">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Timer className="w-3 h-3 text-muted-foreground" />
+                    <span className="text-xs text-muted-foreground uppercase tracking-wider">Duration</span>
                   </div>
-                  <div className="text-sm text-text-primary">
+                  <div className="text-sm text-foreground">
                     {request.riskLevel === 'high' || request.riskLevel === 'critical' ? '24 hours (time-boxed)' : '90 days'}
                   </div>
                 </div>
-                <div className="bg-surface-raised rounded p-2.5">
-                  <div className="flex items-center gap-1.5 mb-1">
-                    <Globe className="w-3 h-3 text-text-muted" />
-                    <span className="text-[10px] text-text-muted uppercase tracking-wider">Environment</span>
+                <div className="bg-muted rounded p-3">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Globe className="w-3 h-3 text-muted-foreground" />
+                    <span className="text-xs text-muted-foreground uppercase tracking-wider">Environment</span>
                   </div>
-                  <div className="text-sm text-text-primary">
+                  <div className="text-sm text-foreground">
                     {request.requestedSystem.toLowerCase().includes('prod') || request.requestedSystem.toLowerCase().includes('iam') ? 'Production' : 'All environments'}
                   </div>
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
-                <div className="bg-surface-raised rounded p-2.5">
-                  <div className="flex items-center gap-1.5 mb-1">
-                    <Lock className="w-3 h-3 text-text-muted" />
-                    <span className="text-[10px] text-text-muted uppercase tracking-wider">Scope Limitation</span>
+                <div className="bg-muted rounded p-3">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Lock className="w-3 h-3 text-muted-foreground" />
+                    <span className="text-xs text-muted-foreground uppercase tracking-wider">Scope Limitation</span>
                   </div>
-                  <div className="text-xs text-text-secondary">
+                  <div className="text-xs text-foreground/80">
                     {request.riskLevel === 'high' || request.riskLevel === 'critical'
                       ? 'Scoped to justification-specified resources only'
                       : 'Full role permissions within system'}
                   </div>
                 </div>
-                <div className="bg-surface-raised rounded p-2.5">
-                  <div className="flex items-center gap-1.5 mb-1">
-                    <Eye className="w-3 h-3 text-text-muted" />
-                    <span className="text-[10px] text-text-muted uppercase tracking-wider">Audit</span>
+                <div className="bg-muted rounded p-3">
+                  <div className="flex items-center gap-2 mb-1">
+                    <Eye className="w-3 h-3 text-muted-foreground" />
+                    <span className="text-xs text-muted-foreground uppercase tracking-wider">Audit</span>
                   </div>
-                  <div className="text-xs text-text-secondary">
+                  <div className="text-xs text-foreground/80">
                     {request.riskLevel === 'high' || request.riskLevel === 'critical'
                       ? 'Full audit trail + session recording'
                       : 'Standard audit logging'}
                   </div>
                 </div>
               </div>
-              <div className="text-[10px] text-text-muted border-t border-border pt-2">
+              <div className="text-xs text-muted-foreground border-t border-border pt-2">
                 Auto-revocation: {request.riskLevel === 'high' || request.riskLevel === 'critical' ? 'Access auto-revokes after time window expires' : 'Access expires at end of grant period'}
               </div>
-            </div>
+            </AccordionContent>
+            </AccordionItem>
           )}
 
           {/* Approval Chain Timeline */}
-          <div className="bg-surface rounded-lg border border-border p-4 space-y-4">
-            <h3 className="text-sm font-medium text-text-primary">Approval Chain</h3>
+          <AccordionItem value="chain" className="border-b last:border-b-0">
+            <AccordionTrigger className="px-6 text-sm font-semibold">
+              Approval Chain
+            </AccordionTrigger>
+            <AccordionContent className="px-6 pb-5 flex flex-col gap-4">
             <div className="relative pl-3">
               {steps.map((s, i) => {
                 const isLast = i === steps.length - 1
@@ -530,12 +546,12 @@ export default function AccessRequestDetail() {
 
                 // Status label
                 let statusLabel = ''
-                let statusColor = 'text-text-muted'
+                let statusColor = 'text-muted-foreground'
                 if (s.step === 3) {
                   // Grant execution step
                   if (s.status === 'locked') {
                     statusLabel = 'Locked until approvals clear'
-                    statusColor = 'text-text-muted/60'
+                    statusColor = 'text-muted-foreground/60'
                   } else if (s.status === 'completed') {
                     statusLabel = 'Executed'
                     statusColor = 'text-status-approved'
@@ -545,7 +561,7 @@ export default function AccessRequestDetail() {
                   }
                 } else if (isNotRequired) {
                   statusLabel = 'Not Required'
-                  statusColor = 'text-text-muted'
+                  statusColor = 'text-muted-foreground'
                 } else if (isDenied) {
                   statusLabel = 'Denied'
                   statusColor = 'text-risk-critical'
@@ -557,7 +573,7 @@ export default function AccessRequestDetail() {
                   statusColor = 'text-status-pending'
                 } else {
                   statusLabel = 'Waiting'
-                  statusColor = 'text-text-muted/60'
+                  statusColor = 'text-muted-foreground/60'
                 }
 
                 return (
@@ -577,8 +593,8 @@ export default function AccessRequestDetail() {
                     {/* Content */}
                     <div className="flex-1 pb-4">
                       <div className="flex items-center justify-between">
-                        <div className="text-sm text-text-primary font-medium">
-                          <span className="text-text-muted mr-1.5">Step {s.step}</span>
+                        <div className="text-sm text-foreground font-medium">
+                          <span className="text-muted-foreground mr-1.5">Step {s.step}</span>
                           {s.label}
                         </div>
                         <span className={`text-xs font-medium ${statusColor}`}>
@@ -586,12 +602,12 @@ export default function AccessRequestDetail() {
                         </span>
                       </div>
                       {s.actor && (
-                        <div className="text-xs text-text-muted mt-0.5">
+                        <div className="text-xs text-muted-foreground mt-0.5">
                           {s.required ? 'Required' : 'Optional'} &middot; {s.actor}
                         </div>
                       )}
                       {s.step === 3 && (
-                        <div className="text-xs text-text-muted mt-0.5">
+                        <div className="text-xs text-muted-foreground mt-0.5">
                           {s.status === 'locked'
                             ? 'Blocked until all prior approvals are obtained'
                             : s.status === 'active'
@@ -604,204 +620,49 @@ export default function AccessRequestDetail() {
                 )
               })}
             </div>
-          </div>
+            </AccordionContent>
+          </AccordionItem>
 
           {/* What Happens Next */}
-          <div className="bg-surface rounded-lg border border-border p-4">
-            <h3 className="text-sm font-medium text-text-primary mb-3">What Happens Next</h3>
-            <div className="flex items-start gap-3">
-              <whatsNext.icon
-                className={`w-4 h-4 flex-shrink-0 mt-0.5 ${whatsNext.color}`}
-              />
-              <div className="text-sm text-text-secondary leading-relaxed">{whatsNext.text}</div>
-            </div>
-          </div>
+          <AccordionItem value="next" className="border-b last:border-b-0">
+            <AccordionTrigger className="px-6 text-sm font-semibold">
+              What Happens Next
+            </AccordionTrigger>
+            <AccordionContent className="px-6 pb-5">
+              <div className="flex items-start gap-3">
+                <whatsNext.icon
+                  className={`w-4 h-4 flex-shrink-0 mt-0.5 ${whatsNext.color}`}
+                />
+                <div className="text-sm text-foreground/80 leading-relaxed">{whatsNext.text}</div>
+              </div>
+            </AccordionContent>
+          </AccordionItem>
+          </Accordion>
+          </Card>
         </div>
 
         {/* ---- RIGHT: Action rail ---- */}
-        <div className="space-y-3">
-          {/* AI Re-analyze */}
-          <div className="bg-surface rounded-lg border border-border p-4 space-y-3">
-            <h3 className="text-xs font-medium text-text-muted uppercase tracking-wider">AI Analysis</h3>
-            <ReanalyzeButton
-              kind="access_request"
-              entityIdOrTicket={request.requestId}
-              userRole={role}
-              mutate={reviewAgent.mutate}
-              isPending={reviewAgent.isPending}
-              isError={reviewAgent.isError}
-              isSuccess={reviewAgent.isSuccess}
-              error={reviewAgent.error}
-              data={reviewAgent.data}
-            />
-          </div>
+        <div className="flex flex-col gap-5">
+          <Card>
+            <CardHeader className="border-b">
+              <CardTitle className="text-sm font-semibold">AI Analysis</CardTitle>
+            </CardHeader>
+            <CardContent className="py-4">
+              <ReanalyzeButton
+                kind="access_request"
+                entityIdOrTicket={request.requestId}
+                userRole={role}
+                mutate={reviewAgent.mutate}
+                isPending={reviewAgent.isPending}
+                isError={reviewAgent.isError}
+                isSuccess={reviewAgent.isSuccess}
+                error={reviewAgent.error}
+                data={reviewAgent.data}
+              />
+            </CardContent>
+          </Card>
 
-          {/* Available Now */}
-          <div className="bg-surface rounded-lg border border-border p-4 space-y-3">
-            <h3 className="text-xs font-medium text-text-muted uppercase tracking-wider">
-              Available Now <span className="text-accent">&middot; {config.label}</span>
-            </h3>
-            {availableActions.length === 0 && (
-              <p className="text-xs text-text-muted py-1">No actions available right now.</p>
-            )}
-            {availableActions.map(a => {
-              const Icon = a.icon
-              return (
-                <button
-                  key={a.key}
-                  onClick={() => {
-                    const actionFn = (() => {
-                      if (a.key === 'approve') return () => {
-                        // Determine role: if user is access_approver/admin, they're the owner; approver could be either
-                        const approverRole = role === 'access_approver' ? 'owner' : (request.managerApproval === 'pending' ? 'manager' : 'owner')
-                        accessDecide.mutate({ id: request.requestId, decision: 'approved', role: approverRole })
-                        setGuardModal(null)
-                      }
-                      if (a.key === 'deny') return () => {
-                        const approverRole = role === 'access_approver' ? 'owner' : (request.managerApproval === 'pending' ? 'manager' : 'owner')
-                        accessDecide.mutate({ id: request.requestId, decision: 'denied', role: approverRole })
-                        setGuardModal(null)
-                      }
-                      return () => setGuardModal(null)
-                    })()
-                    setGuardModal({
-                      open: true,
-                      title: a.label,
-                      description: a.desc,
-                      variant: a.variant,
-                      action: actionFn,
-                    })
-                  }}
-                  className={`w-full flex items-center gap-2 px-3 py-2 rounded-lg transition-colors text-sm font-medium ${a.style}`}
-                >
-                  <Icon className="w-4 h-4" /> {a.label}
-                </button>
-              )
-            })}
-          </div>
-
-          {/* Decision Impact — Approver only */}
-          {(role === 'approver' || role === 'access_approver' || role === 'admin') && (() => {
-            const allApprovalsClear =
-              (!request.managerApprovalRequired || request.managerApproval === 'approved' || request.managerApproval === 'not_required') &&
-              (!request.ownerApprovalRequired || request.ownerApproval === 'approved' || request.ownerApproval === 'not_required')
-            const remainingApprovers: string[] = []
-            if (request.managerApprovalRequired && request.managerApproval === 'pending') remainingApprovers.push(request.manager)
-            if (request.ownerApprovalRequired && request.ownerApproval === 'pending') remainingApprovers.push(request.systemOwner)
-            const isFinalApproval = remainingApprovers.length <= 1
-            const isTimeBoxed = request.riskLevel === 'high' || request.riskLevel === 'critical'
-
-            return (
-              <div className="bg-surface rounded-lg border border-accent/20 p-4 space-y-3">
-                <h3 className="text-xs font-medium text-accent uppercase tracking-wider flex items-center gap-1.5">
-                  <AlertTriangle className="w-3 h-3" />
-                  Decision Impact
-                </h3>
-
-                {/* Chain status strip */}
-                <div className={`rounded p-2 text-xs font-medium flex items-center gap-1.5 ${
-                  isFinalApproval && !allApprovalsClear
-                    ? 'bg-accent/10 text-accent'
-                    : allApprovalsClear
-                    ? 'bg-status-approved/10 text-status-approved'
-                    : 'bg-status-pending/10 text-status-pending'
-                }`}>
-                  {isFinalApproval && !allApprovalsClear ? (
-                    <><UserCheck className="w-3 h-3" /> Your approval is the final gate — this will grant access</>
-                  ) : allApprovalsClear ? (
-                    <><CheckCircle className="w-3 h-3" /> All approvals cleared — ready for grant execution</>
-                  ) : (
-                    <><Clock className="w-3 h-3" /> Your approval advances the chain — {remainingApprovers.length - 1} more approver{remainingApprovers.length - 1 !== 1 ? 's' : ''} after you</>
-                  )}
-                </div>
-
-                <div className="space-y-2">
-                  <div className="flex gap-2">
-                    <CheckCircle className="w-3 h-3 text-status-approved flex-shrink-0 mt-0.5" />
-                    <div>
-                      <div className="text-[10px] font-medium text-status-approved uppercase">If approved</div>
-                      <p className="text-xs text-text-secondary">
-                        {isFinalApproval
-                          ? `${request.requester} receives ${request.requestedRole} on ${request.requestedSystem}.`
-                          : `Advances to next approver. Does not yet grant access.`}
-                        {isFinalApproval && isTimeBoxed && ' Time-boxed access with full audit trail.'}
-                        {isFinalApproval && !isTimeBoxed && ' Standard access provisioned.'}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex gap-2">
-                    <XCircle className="w-3 h-3 text-status-denied flex-shrink-0 mt-0.5" />
-                    <div>
-                      <div className="text-[10px] font-medium text-status-denied uppercase">If denied</div>
-                      <p className="text-xs text-text-secondary">
-                        Access not granted. {request.requester} notified. Can re-request with updated justification.
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex gap-2">
-                    <ArrowUpRight className="w-3 h-3 text-status-escalated flex-shrink-0 mt-0.5" />
-                    <div>
-                      <div className="text-[10px] font-medium text-status-escalated uppercase">If escalated</div>
-                      <p className="text-xs text-text-secondary">
-                        Routes to Security for additional review. Access remains blocked until resolution.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Grant details */}
-                {isFinalApproval && (
-                  <div className="border-t border-border pt-2 space-y-1">
-                    <div className="text-[10px] text-text-muted uppercase tracking-wider font-medium">Grant details</div>
-                    <div className="grid grid-cols-2 gap-1.5 text-[11px]">
-                      <div className="text-text-muted">Duration</div>
-                      <div className="text-text-secondary">{isTimeBoxed ? '24h time-boxed' : '90 days'}</div>
-                      <div className="text-text-muted">Scope</div>
-                      <div className="text-text-secondary">{isTimeBoxed ? 'Scoped to justification' : 'Full role'}</div>
-                      <div className="text-text-muted">Audit</div>
-                      <div className="text-text-secondary">{isTimeBoxed ? 'Session recording' : 'Standard logging'}</div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )
-          })()}
-
-          {/* Not Available */}
-          {(blockedByState.length > 0 || blockedByRole.length > 0) && (
-            <div className="bg-surface rounded-lg border border-border p-4 space-y-2">
-              <h3 className="text-xs font-medium text-text-muted uppercase tracking-wider">
-                Not Available
-              </h3>
-              {blockedByState.map(a => {
-                const Icon = a.icon
-                return (
-                  <div key={a.key} className="flex items-start gap-2 py-1.5">
-                    <Icon className="w-3.5 h-3.5 text-text-muted/50 flex-shrink-0 mt-0.5" />
-                    <div>
-                      <div className="text-xs text-text-muted font-medium">{a.label}</div>
-                      <div className="text-[10px] text-text-muted/70">
-                        {'disabledReason' in a && a.disabledReason
-                          ? a.disabledReason
-                          : 'Blocked by current request state'}
-                      </div>
-                    </div>
-                  </div>
-                )
-              })}
-              {blockedByRole.map(blocked => (
-                <div key={blocked.action} className="flex items-start gap-2 py-1.5">
-                  <Ban className="w-3.5 h-3.5 text-text-muted flex-shrink-0 mt-0.5" />
-                  <div>
-                    <div className="text-xs text-text-muted font-medium">{blocked.label}</div>
-                    <div className="text-[10px] text-text-muted/70">{blocked.reason}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Contextual Assistant */}
+          {/* Sentinel mini assistant — high up so quick prompts visible without scroll */}
           <ContextualAssistant
             entityType="access_request"
             entityId={request.id}
@@ -821,6 +682,176 @@ export default function AccessRequestDetail() {
               ]
             }
           />
+
+          <Card>
+            <CardHeader className="border-b">
+              <div className="flex items-center justify-between gap-2">
+                <CardTitle className="text-sm font-semibold">Available Now</CardTitle>
+                <Badge variant="secondary" className="text-[10px] uppercase tracking-wider">{config.label}</Badge>
+              </div>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-2 py-4">
+              {availableActions.length === 0 && (
+                <p className="text-sm text-muted-foreground">No actions available right now.</p>
+              )}
+              {availableActions.map(a => {
+                const Icon = a.icon
+                return (
+                  <button
+                    key={a.key}
+                    onClick={() => {
+                      const actionFn = (() => {
+                        if (a.key === 'approve') return () => {
+                          const approverRole = role === 'access_approver' ? 'owner' : (request.managerApproval === 'pending' ? 'manager' : 'owner')
+                          accessDecide.mutate({ id: request.requestId, decision: 'approved', role: approverRole })
+                          setGuardModal(null)
+                        }
+                        if (a.key === 'deny') return () => {
+                          const approverRole = role === 'access_approver' ? 'owner' : (request.managerApproval === 'pending' ? 'manager' : 'owner')
+                          accessDecide.mutate({ id: request.requestId, decision: 'denied', role: approverRole })
+                          setGuardModal(null)
+                        }
+                        return () => setGuardModal(null)
+                      })()
+                      setGuardModal({
+                        open: true,
+                        title: a.label,
+                        description: a.desc,
+                        variant: a.variant,
+                        action: actionFn,
+                      })
+                    }}
+                    className={`flex h-11 w-full items-center gap-3 rounded-md px-4 text-sm font-medium transition-colors ${a.style}`}
+                  >
+                    <Icon className="h-4 w-4 flex-shrink-0" />
+                    <span className="flex-1 text-left">{a.label}</span>
+                  </button>
+                )
+              })}
+            </CardContent>
+          </Card>
+
+          {/* Decision Impact — Approver only */}
+          {(role === 'approver' || role === 'access_approver' || role === 'admin') && (() => {
+            const allApprovalsClear =
+              (!request.managerApprovalRequired || request.managerApproval === 'approved' || request.managerApproval === 'not_required') &&
+              (!request.ownerApprovalRequired || request.ownerApproval === 'approved' || request.ownerApproval === 'not_required')
+            const remainingApprovers: string[] = []
+            if (request.managerApprovalRequired && request.managerApproval === 'pending') remainingApprovers.push(request.manager)
+            if (request.ownerApprovalRequired && request.ownerApproval === 'pending') remainingApprovers.push(request.systemOwner)
+            const isFinalApproval = remainingApprovers.length <= 1
+            const isTimeBoxed = request.riskLevel === 'high' || request.riskLevel === 'critical'
+
+            return (
+              <div className="bg-card rounded-lg border border-accent/20 p-4 space-y-3">
+                <h3 className="text-xs font-medium text-primary uppercase tracking-wider flex items-center gap-1.5">
+                  <AlertTriangle className="w-3 h-3" />
+                  Decision Impact
+                </h3>
+
+                {/* Chain status strip */}
+                <div className={`rounded p-2 text-xs font-medium flex items-center gap-2 ${
+                  isFinalApproval && !allApprovalsClear
+                    ? 'bg-primary/10 text-primary'
+                    : allApprovalsClear
+                    ? 'bg-status-approved/10 text-status-approved'
+                    : 'bg-status-pending/10 text-status-pending'
+                }`}>
+                  {isFinalApproval && !allApprovalsClear ? (
+                    <><UserCheck className="w-3 h-3" /> Your approval is the final gate — this will grant access</>
+                  ) : allApprovalsClear ? (
+                    <><CheckCircle className="w-3 h-3" /> All approvals cleared — ready for grant execution</>
+                  ) : (
+                    <><Clock className="w-3 h-3" /> Your approval advances the chain — {remainingApprovers.length - 1} more approver{remainingApprovers.length - 1 !== 1 ? 's' : ''} after you</>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex gap-2">
+                    <CheckCircle className="w-3 h-3 text-status-approved flex-shrink-0 mt-0.5" />
+                    <div>
+                      <div className="text-xs font-medium text-status-approved uppercase">If approved</div>
+                      <p className="text-xs text-foreground/80">
+                        {isFinalApproval
+                          ? `${request.requester} receives ${request.requestedRole} on ${request.requestedSystem}.`
+                          : `Advances to next approver. Does not yet grant access.`}
+                        {isFinalApproval && isTimeBoxed && ' Time-boxed access with full audit trail.'}
+                        {isFinalApproval && !isTimeBoxed && ' Standard access provisioned.'}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <XCircle className="w-3 h-3 text-status-denied flex-shrink-0 mt-0.5" />
+                    <div>
+                      <div className="text-xs font-medium text-status-denied uppercase">If denied</div>
+                      <p className="text-xs text-foreground/80">
+                        Access not granted. {request.requester} notified. Can re-request with updated justification.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <ArrowUpRight className="w-3 h-3 text-status-escalated flex-shrink-0 mt-0.5" />
+                    <div>
+                      <div className="text-xs font-medium text-status-escalated uppercase">If escalated</div>
+                      <p className="text-xs text-foreground/80">
+                        Routes to Security for additional review. Access remains blocked until resolution.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Grant details */}
+                {isFinalApproval && (
+                  <div className="border-t border-border pt-2 space-y-1">
+                    <div className="text-xs text-muted-foreground uppercase tracking-wider font-medium">Grant details</div>
+                    <div className="grid grid-cols-2 gap-2 text-xs">
+                      <div className="text-muted-foreground">Duration</div>
+                      <div className="text-foreground/80">{isTimeBoxed ? '24h time-boxed' : '90 days'}</div>
+                      <div className="text-muted-foreground">Scope</div>
+                      <div className="text-foreground/80">{isTimeBoxed ? 'Scoped to justification' : 'Full role'}</div>
+                      <div className="text-muted-foreground">Audit</div>
+                      <div className="text-foreground/80">{isTimeBoxed ? 'Session recording' : 'Standard logging'}</div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )
+          })()}
+
+          {(blockedByState.length > 0 || blockedByRole.length > 0) && (
+            <Card>
+              <CardHeader className="border-b">
+                <CardTitle className="text-sm font-semibold">Not Available</CardTitle>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-2 py-4">
+                {blockedByState.map(a => {
+                  const Icon = a.icon
+                  return (
+                    <div key={a.key} className="flex items-start gap-3 rounded-md px-3 py-2.5 text-muted-foreground">
+                      <Icon className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                      <div className="flex flex-col gap-1 min-w-0">
+                        <div className="text-sm font-medium text-foreground/85">{a.label}</div>
+                        <div className="text-xs leading-relaxed">
+                          {'disabledReason' in a && a.disabledReason
+                            ? a.disabledReason
+                            : 'Blocked by current request state'}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })}
+                {blockedByRole.map(blocked => (
+                  <div key={blocked.action} className="flex items-start gap-3 rounded-md px-3 py-2.5 text-muted-foreground">
+                    <Ban className="h-4 w-4 flex-shrink-0 mt-0.5" />
+                    <div className="flex flex-col gap-1 min-w-0">
+                      <div className="text-sm font-medium text-foreground/85">{blocked.label}</div>
+                      <div className="text-xs leading-relaxed">{blocked.reason}</div>
+                    </div>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          )}
         </div>
       </div>
 

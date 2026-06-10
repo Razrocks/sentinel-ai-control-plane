@@ -263,6 +263,11 @@ export async function routeApproval(opts: {
           name: r.name,
           description: r.description,
           decision: r.decision as 'allow' | 'deny' | 'escalate' | 'simulate_only',
+          // Pass the admin-authored context through so the support_approval
+          // skill can reason over WHY a rule exists, not just what it forbids.
+          rationale: r.rationale,
+          examples: r.examples,
+          tags: r.tags,
         })) ?? [],
       activeFreezesAffecting: ctx.t1?.policyBundle?.activeFreezes.map((f) => f.id) ?? [],
     },

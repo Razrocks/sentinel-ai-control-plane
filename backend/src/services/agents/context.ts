@@ -42,6 +42,11 @@ export async function loadPolicyBundle(): Promise<T1bPolicyBundle> {
       decision: r.decision,
       scope: r.scope,
       appliesTo: r.appliesTo,
+      // Newer admin-authored context. Fed verbatim into the skill prompt so
+      // the agent can explain enforcement + pattern-match similar requests.
+      rationale: r.rationale,
+      examples: r.examples,
+      tags: r.tags,
     })),
     activeFreezes: freezes.map((f) => ({
       id: f.id,

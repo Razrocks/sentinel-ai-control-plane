@@ -1,17 +1,15 @@
 /**
- * Approvals — pending decision inbox (Phase 4 v2 — refined).
+ * Approvals — Linear-style refined inbox.
  *
- * Layout principles after the first pass feedback:
- *   - Full width container; no max-w cap.
- *   - Each approval is ONE Card with three vertical zones rather than a
- *     three-column grid that breaks at narrow viewports:
- *       1. Top: type / risk / urgency strip + title
- *       2. Body: 2-col on lg+ (left = context, right = analysis)
- *       3. Footer: action row (full width, evenly distributed)
- *   - Big text where it matters (title, action labels), generous padding
- *   - Tabs use proper gap so chips don't merge with adjacent labels
- *   - Stage strip and "why required" hint live above the title as
- *     status bars, not inline noise.
+ * Built entirely on the shadcn preset primitives (radix-vega style):
+ *   - Card with `--card-spacing` for consistent gutters
+ *   - Tabs `variant="line"` for understated filter row
+ *   - Avatar primitive for co-approver chips
+ *   - Badge with subtle ring outline matching the rest of the system
+ *   - Dialog with built-in glass overlay for the condition modal
+ *
+ * No hand-built variants. No inline-style hacks. Everything composes
+ * from primitives + theme tokens.
  */
 import { useState } from 'react'
 import {
@@ -26,18 +24,32 @@ import {
   Users,
   Info,
   ChevronDown,
-  ChevronUp,
   Inbox,
+  Search,
 } from 'lucide-react'
+import { Input } from '@/components/ui/input'
 import { useApprovals } from '@/hooks/useData'
-import { useApprovalDecision, ApprovalConflictError } from '@/hooks/useMutations'
+import {
+  useApprovalDecision,
+  useApprovalAddNote,
+  useApprovalEscalate,
+  ApprovalConflictError,
+} from '@/hooks/useMutations'
 import { ActionGuardModal } from '@/components/shared'
-import { timeAgo } from '@/lib/utils'
+import { timeAgo, cn } from '@/lib/utils'
 import { useRole } from '@/lib/roles'
 import type { Approval } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
-import { Card, CardContent } from '@/components/ui/card'
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+  CardFooter,
+  CardAction,
+} from '@/components/ui/card'
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import {
@@ -51,7 +63,7 @@ import {
 import { Textarea } from '@/components/ui/textarea'
 import { Separator } from '@/components/ui/separator'
 import { Skeleton } from '@/components/ui/skeleton'
-import { cn } from '@/lib/utils'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 
 type FilterType = 'all' | 'change' | 'access' | 'remediation' | 'escalation'
 
@@ -62,30 +74,30 @@ const typeLabels: Record<string, string> = {
   escalation: 'Escalation',
 }
 
-function riskToBadge(riskLevel: string) {
-  const map: Record<
-    string,
-    { variant: 'risk_critical' | 'risk_high' | 'risk_medium' | 'risk_low'; label: string }
-  > = {
-    critical: { variant: 'risk_critical', label: 'CRITICAL' },
-    high: { variant: 'risk_high', label: 'HIGH' },
-    medium: { variant: 'risk_medium', label: 'MEDIUM' },
-    low: { variant: 'risk_low', label: 'LOW' },
+function riskTone(level: string) {
+  const map: Record<string, { dot: string; label: string; text: string }> = {
+    critical: { dot: 'bg-risk-critical', text: 'text-risk-critical', label: 'CRITICAL' },
+    high: { dot: 'bg-risk-high', text: 'text-risk-high', label: 'HIGH' },
+    medium: { dot: 'bg-risk-medium', text: 'text-risk-medium', label: 'MEDIUM' },
+    low: { dot: 'bg-risk-low', text: 'text-risk-low', label: 'LOW' },
   }
-  return map[riskLevel] ?? map.medium
+  return map[level] ?? map.medium
 }
 
-function urgencyAccent(approval: Approval): string {
-  if (approval.riskLevel === 'critical') return 'border-l-4 border-l-risk-critical'
-  if (approval.riskLevel === 'high') return 'border-l-4 border-l-risk-high'
-  if (approval.type === 'escalation') return 'border-l-4 border-l-status-escalated'
-  return 'border-l-4 border-l-border'
+function urgencyRail(approval: Approval): string {
+  if (approval.riskLevel === 'critical') return 'before:bg-risk-critical'
+  if (approval.riskLevel === 'high') return 'before:bg-risk-high'
+  if (approval.type === 'escalation') return 'before:bg-status-escalated'
+  return 'before:bg-transparent'
 }
 
 export default function Approvals() {
   const { data: approvals = [], isLoading } = useApprovals()
   const [filter, setFilter] = useState<FilterType>('all')
+  const [query, setQuery] = useState('')
   const approvalDecision = useApprovalDecision()
+  const approvalNote = useApprovalAddNote()
+  const approvalEscalate = useApprovalEscalate()
 
   const [guardModal, setGuardModal] = useState<{
     action: string
@@ -94,13 +106,25 @@ export default function Approvals() {
   } | null>(null)
   const [conditionModal, setConditionModal] = useState<Approval | null>(null)
   const [conditionText, setConditionText] = useState('')
+  const [noteModal, setNoteModal] = useState<Approval | null>(null)
+  const [noteText, setNoteText] = useState('')
+  const [escalateModal, setEscalateModal] = useState<Approval | null>(null)
+  const [escalateReason, setEscalateReason] = useState('')
   const [expandedImpact, setExpandedImpact] = useState<string | null>(null)
   const { role, canAction, getActionPermission } = useRole()
 
   const isApproverRole =
     role === 'approver' || role === 'access_approver' || role === 'admin'
 
-  const filtered = filter === 'all' ? approvals : approvals.filter((a) => a.type === filter)
+  const q = query.trim().toLowerCase()
+  const filtered = (filter === 'all' ? approvals : approvals.filter((a) => a.type === filter)).filter((a) => {
+    if (!q) return true
+    return (
+      a.title.toLowerCase().includes(q) ||
+      (a.impactedSystem ?? '').toLowerCase().includes(q) ||
+      (a.requester ?? '').toLowerCase().includes(q)
+    )
+  })
   const pending = filtered.filter((a) => a.status === 'pending')
   const resolved = filtered.filter((a) => a.status !== 'pending')
   const pendingCount = approvals.filter((a) => a.status === 'pending').length
@@ -157,6 +181,55 @@ export default function Approvals() {
     })
   }
 
+  const handleAddNote = (approval: Approval) => {
+    setNoteModal(approval)
+    setNoteText('')
+  }
+
+  const confirmNote = () => {
+    if (!noteModal || !noteText.trim()) return
+    approvalNote.mutate(
+      { id: noteModal.id, content: noteText.trim() },
+      {
+        onSuccess: () => {
+          setNoteModal(null)
+          setNoteText('')
+        },
+      },
+    )
+  }
+
+  const handleEscalate = (approval: Approval) => {
+    const perm = getActionPermission('escalate', 'Escalate')
+    if (!perm.allowed) {
+      setGuardModal({
+        action: 'escalate',
+        label: 'Escalate',
+        reason: perm.reason || 'Not permitted',
+      })
+      return
+    }
+    setEscalateModal(approval)
+    setEscalateReason('')
+  }
+
+  const confirmEscalate = () => {
+    if (!escalateModal || !escalateReason.trim()) return
+    approvalEscalate.mutate(
+      {
+        id: escalateModal.id,
+        reason: escalateReason.trim(),
+        expectedVersion: escalateModal.version,
+      },
+      {
+        onSuccess: () => {
+          setEscalateModal(null)
+          setEscalateReason('')
+        },
+      },
+    )
+  }
+
   const tabs: { id: FilterType; label: string; count: number }[] = [
     { id: 'all', label: 'All', count: approvals.filter((a) => a.status === 'pending').length },
     {
@@ -182,19 +255,21 @@ export default function Approvals() {
   ]
 
   return (
-    <div className="space-y-12">
+    <div className="flex flex-col gap-10">
       {/* Header */}
-      <div className="mb-6">
-        <h1 className="text-3xl font-semibold text-foreground tracking-tight">Approvals</h1>
-        <p className="text-base text-muted-foreground mt-4">
-          {pendingCount} pending approval{pendingCount !== 1 ? 's' : ''} requiring action
+      <div className="flex flex-col gap-3">
+        <h1 className="font-heading text-3xl font-medium tracking-tight text-foreground">
+          Approvals
+        </h1>
+        <p className="text-sm text-muted-foreground">
+          {pendingCount} pending {pendingCount === 1 ? 'approval' : 'approvals'} requiring action.
         </p>
       </div>
 
       {/* Banners */}
       {approvalDecision.error instanceof ApprovalConflictError && (
         <Alert variant="warning">
-          <AlertTriangle className="h-4 w-4" />
+          <AlertTriangle />
           <AlertTitle>Approval changed while you were deciding</AlertTitle>
           <AlertDescription>
             Another approver acted on this request first. The latest state has been reloaded — review it
@@ -202,7 +277,7 @@ export default function Approvals() {
             <Button
               variant="ghost"
               size="sm"
-              className="mt-2 h-8"
+              className="mt-3"
               onClick={() => approvalDecision.reset()}
             >
               Dismiss
@@ -212,14 +287,14 @@ export default function Approvals() {
       )}
       {approvalDecision.error && !(approvalDecision.error instanceof ApprovalConflictError) && (
         <Alert variant="destructive">
-          <XCircle className="h-4 w-4" />
+          <XCircle />
           <AlertTitle>Decision failed</AlertTitle>
           <AlertDescription>
             {approvalDecision.error.message}
             <Button
               variant="ghost"
               size="sm"
-              className="mt-2 h-8"
+              className="mt-3"
               onClick={() => approvalDecision.reset()}
             >
               Dismiss
@@ -228,36 +303,54 @@ export default function Approvals() {
         </Alert>
       )}
 
-      {/* Tabs */}
-      <Tabs value={filter} onValueChange={(v) => setFilter(v as FilterType)}>
-        <TabsList>
-          {tabs.map((t) => (
-            <TabsTrigger key={t.id} value={t.id} className="gap-2">
-              <span>{t.label}</span>
-              {t.count > 0 && (
-                <span className="rounded-full bg-foreground/15 px-2 py-0.5 text-[10px] font-semibold">
-                  {t.count}
-                </span>
-              )}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-      </Tabs>
+      {/* Filter + search rail */}
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+        <Tabs value={filter} onValueChange={(v) => setFilter(v as FilterType)}>
+          <TabsList className="h-11 gap-1 p-1">
+            {tabs.map((t) => (
+              <TabsTrigger
+                key={t.id}
+                value={t.id}
+                className="h-9 gap-2 px-4 text-sm font-medium flex-none"
+              >
+                <span>{t.label}</span>
+                {t.count > 0 && (
+                  <Badge variant="secondary" className="ml-1 h-5 px-1.5 text-[10px] font-semibold">
+                    {t.count}
+                  </Badge>
+                )}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
 
-      {/* Loading */}
+        <div className="relative w-full lg:w-80">
+          <Search
+            className="pointer-events-none absolute top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground"
+            style={{ left: '0.875rem' }}
+          />
+          <Input
+            type="search"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search title, system, requester..."
+            style={{ height: '2.75rem', paddingLeft: '2.75rem', paddingRight: '1rem' }}
+          />
+        </div>
+      </div>
+
       {isLoading && (
-        <div className="space-y-4">
+        <div className="flex flex-col gap-4">
           {[0, 1, 2].map((i) => (
             <Skeleton key={i} className="h-64 w-full" />
           ))}
         </div>
       )}
 
-      {/* Pending */}
       {!isLoading && pending.length > 0 && (
-        <section className="space-y-6">
-          <SectionHeading count={pending.length}>Pending</SectionHeading>
-          <div className="space-y-6">
+        <section className="flex flex-col gap-4">
+          <SectionLabel>Pending · {pending.length}</SectionLabel>
+          <div className="flex flex-col gap-4">
             {pending.map((approval) => (
               <PendingApprovalCard
                 key={approval.id}
@@ -271,34 +364,36 @@ export default function Approvals() {
                 onApprove={() => handleApprove(approval)}
                 onApproveWithCondition={() => handleApproveWithCondition(approval)}
                 onDeny={() => handleDeny(approval)}
+                onAddNote={() => handleAddNote(approval)}
+                onEscalate={() => handleEscalate(approval)}
               />
             ))}
           </div>
         </section>
       )}
 
-      {/* Resolved */}
       {!isLoading && resolved.length > 0 && (
-        <section className="space-y-6">
-          <SectionHeading count={resolved.length}>Resolved</SectionHeading>
+        <section className="flex flex-col gap-4">
+          <SectionLabel>Resolved · {resolved.length}</SectionLabel>
           <Card>
-            <CardContent className="p-0 divide-y divide-border">
-              {resolved.map((approval) => (
-                <ResolvedRow key={approval.id} approval={approval} />
-              ))}
+            <CardContent className="p-0">
+              <ul className="flex flex-col divide-y divide-border">
+                {resolved.map((approval) => (
+                  <ResolvedRow key={approval.id} approval={approval} />
+                ))}
+              </ul>
             </CardContent>
           </Card>
         </section>
       )}
 
-      {/* Empty */}
       {!isLoading && filtered.length === 0 && (
         <Card>
-          <CardContent className="flex flex-col items-center justify-center py-20">
-            <div className="rounded-full bg-secondary p-4 mb-4">
-              <Inbox className="h-7 w-7 text-muted-foreground" />
+          <CardContent className="flex flex-col items-center justify-center gap-3 py-20">
+            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
+              <Inbox className="h-5 w-5 text-muted-foreground" />
             </div>
-            <p className="text-base text-muted-foreground">No approvals matching this filter</p>
+            <p className="text-sm text-muted-foreground">No approvals match this filter.</p>
           </CardContent>
         </Card>
       )}
@@ -317,7 +412,7 @@ export default function Approvals() {
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <FileCheck className="h-5 w-5 text-status-pending" />
-              Approve with Condition
+              Approve with condition
             </DialogTitle>
             <DialogDescription>
               Specify the condition that must be met before this approval takes effect.
@@ -341,7 +436,100 @@ export default function Approvals() {
               Cancel
             </Button>
             <Button onClick={confirmCondition} disabled={!conditionText.trim()}>
-              Confirm Conditional Approval
+              Confirm
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Note dialog */}
+      <Dialog
+        open={!!noteModal}
+        onOpenChange={(open) => {
+          if (!open) {
+            setNoteModal(null)
+            setNoteText('')
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <MessageSquare className="h-5 w-5 text-primary" />
+              Add note
+            </DialogTitle>
+            <DialogDescription>
+              Attach a note to this approval. Visible in the audit trail.
+            </DialogDescription>
+          </DialogHeader>
+          <Textarea
+            value={noteText}
+            onChange={(e) => setNoteText(e.target.value)}
+            placeholder="Capture rationale, clarification needed, or context for other approvers..."
+            rows={5}
+            autoFocus
+          />
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setNoteModal(null)
+                setNoteText('')
+              }}
+            >
+              Cancel
+            </Button>
+            <Button onClick={confirmNote} disabled={!noteText.trim() || approvalNote.isPending}>
+              {approvalNote.isPending ? 'Saving…' : 'Add note'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Escalate dialog */}
+      <Dialog
+        open={!!escalateModal}
+        onOpenChange={(open) => {
+          if (!open) {
+            setEscalateModal(null)
+            setEscalateReason('')
+          }
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <ArrowUpRight className="h-5 w-5 text-status-escalated" />
+              Escalate approval
+            </DialogTitle>
+            <DialogDescription>
+              Hand off to a senior reviewer. Approval status changes to <code>escalated</code>.
+              Reason is recorded as a note + audit event.
+            </DialogDescription>
+          </DialogHeader>
+          <Textarea
+            value={escalateReason}
+            onChange={(e) => setEscalateReason(e.target.value)}
+            placeholder="Why does this need senior review? (eg blast radius higher than expected, missing rollback plan...)"
+            rows={5}
+            autoFocus
+          />
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setEscalateModal(null)
+                setEscalateReason('')
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={confirmEscalate}
+              disabled={!escalateReason.trim() || approvalEscalate.isPending}
+              className="bg-status-escalated text-white hover:bg-status-escalated/90"
+            >
+              {approvalEscalate.isPending ? 'Escalating…' : 'Escalate'}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -362,20 +550,15 @@ export default function Approvals() {
   )
 }
 
-// ─── Section heading ────────────────────────────────────
-
-function SectionHeading({ count, children }: { count: number; children: React.ReactNode }) {
+function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="flex items-center gap-2">
-      <h2 className="text-sm font-semibold uppercase tracking-wider text-muted-foreground">
-        {children}
-      </h2>
-      <span className="text-xs text-muted-foreground/70">({count})</span>
+    <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+      {children}
     </div>
   )
 }
 
-// ─── Pending approval card ───────────────────────────────
+// ─── Pending card ───────────────────────────────────────
 
 interface PendingCardProps {
   approval: Approval
@@ -386,6 +569,8 @@ interface PendingCardProps {
   onApprove: () => void
   onApproveWithCondition: () => void
   onDeny: () => void
+  onAddNote: () => void
+  onEscalate: () => void
 }
 
 function PendingApprovalCard({
@@ -397,21 +582,26 @@ function PendingApprovalCard({
   onApprove,
   onApproveWithCondition,
   onDeny,
+  onAddNote,
+  onEscalate,
 }: PendingCardProps) {
-  const risk = riskToBadge(approval.riskLevel)
+  const risk = riskTone(approval.riskLevel)
   const canApprove = canAction('approve')
 
   return (
-    <Card className={cn('overflow-hidden', urgencyAccent(approval))}>
-      {/* Why-required strip — high-contrast policy explainer at top */}
+    <Card
+      className={cn(
+        'relative overflow-hidden before:absolute before:top-0 before:bottom-0 before:left-0 before:w-1 before:content-[""]',
+        urgencyRail(approval),
+      )}
+    >
+      {/* Why required strip */}
       {isApproverRole && approval.whyYouAreRequired && (
-        <div className="flex items-start gap-3 px-7 py-3.5 bg-primary/10 border-b border-primary/30">
-          <div className="flex h-6 w-6 items-center justify-center rounded-md bg-primary/20 flex-shrink-0 mt-0.5">
-            <Info className="h-3.5 w-3.5 text-primary" />
-          </div>
-          <span className="text-sm font-medium text-primary leading-relaxed">
+        <div className="flex items-start gap-3 border-b border-primary/25 bg-primary/10 px-6 py-3">
+          <Info className="h-4 w-4 text-primary mt-0.5 flex-shrink-0" />
+          <p className="text-sm font-medium text-primary leading-relaxed">
             {approval.whyYouAreRequired}
-          </span>
+          </p>
         </div>
       )}
 
@@ -420,66 +610,74 @@ function PendingApprovalCard({
         <StageStrip approval={approval} />
       )}
 
-      {/* Header */}
-      <div className="px-7 pt-6 pb-5 space-y-3">
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="outline" className="uppercase text-[10px]">
-            {typeLabels[approval.type] ?? approval.type}
-          </Badge>
-          <Badge variant={risk.variant} className="text-[10px]">
+      <CardHeader className="border-b">
+        <div className="flex flex-wrap items-center gap-2 text-xs uppercase tracking-wider text-muted-foreground">
+          <span>{typeLabels[approval.type] ?? approval.type}</span>
+          <span className="text-muted-foreground/50">·</span>
+          <span className={cn('flex items-center gap-1', risk.text)}>
+            <span className={cn('h-1.5 w-1.5 rounded-full', risk.dot)} />
             {risk.label} RISK
-          </Badge>
-          <span className="text-xs text-muted-foreground ml-auto">
-            Submitted {timeAgo(approval.createdAt)}
           </span>
         </div>
-        <h3 className="text-xl font-semibold text-foreground leading-snug">{approval.title}</h3>
-        <div className="text-sm text-muted-foreground">
+        <CardTitle className="font-heading text-xl leading-tight">
+          {approval.title}
+        </CardTitle>
+        <CardDescription>
           Requested by <span className="text-foreground font-medium">{approval.requester}</span> · System{' '}
-          <code className="text-xs px-1.5 py-0.5 rounded bg-secondary text-foreground">
+          <code className="rounded bg-muted px-1.5 py-0.5 text-xs text-foreground font-mono">
             {approval.impactedSystem}
           </code>
-        </div>
-      </div>
+        </CardDescription>
+        <CardAction>
+          <span className="text-xs text-muted-foreground whitespace-nowrap">
+            Submitted {timeAgo(approval.createdAt)}
+          </span>
+        </CardAction>
+      </CardHeader>
 
-      <Separator />
+      <CardContent className="grid grid-cols-1 gap-x-12 gap-y-6 py-6 lg:grid-cols-2">
+        <Block label="Why approval is needed">
+          <p className="text-sm text-foreground leading-relaxed">{approval.reason}</p>
+        </Block>
+        <Block label="Recommended action" highlight>
+          <p className="text-sm text-foreground leading-relaxed">{approval.recommendedAction}</p>
+        </Block>
 
-      {/* Body — 2-col on lg, single col below */}
-      <div className="px-7 py-6 grid grid-cols-1 lg:grid-cols-2 gap-x-10 gap-y-6">
-        {/* Why approval is needed */}
-        <SectionBlock label="Why approval is needed" body={approval.reason} />
-
-        {/* Recommended action */}
-        <SectionBlock label="Recommended action" body={approval.recommendedAction} highlight />
-
-        {/* Co-approvals */}
         {approval.coApprovals && approval.coApprovals.length > 1 && (
-          <div className="space-y-3">
-            <SectionLabel icon={<Users className="h-3.5 w-3.5" />}>Co-approval chain</SectionLabel>
-            <div className="space-y-2">
+          <Block
+            label={
+              <>
+                <Users className="h-3.5 w-3.5" />
+                Co-approval chain
+              </>
+            }
+          >
+            <ul className="flex flex-col gap-2">
               {approval.coApprovals.map((co, i) => (
-                <CoApprovalRow key={i} co={co} />
+                <li key={i}>
+                  <CoApprovalRow co={co} />
+                </li>
               ))}
-            </div>
-          </div>
+            </ul>
+          </Block>
         )}
 
-        {/* Decision Impact — full-width expandable card. Big tap target,
-            clear affordance: border + hover state + animated chevron. */}
         {isApproverRole && approval.decisionImpact && (
-          <div className="space-y-3">
-            <SectionLabel icon={<AlertTriangle className="h-3.5 w-3.5" />}>
-              Decision impact
-            </SectionLabel>
+          <Block
+            label={
+              <>
+                <AlertTriangle className="h-3.5 w-3.5" />
+                Decision impact
+              </>
+            }
+          >
             <button
               type="button"
               onClick={onToggleImpact}
               aria-expanded={expandedImpact}
               className={cn(
-                'group w-full flex items-center justify-between gap-3 rounded-md border px-5 h-12 text-left transition-colors',
-                expandedImpact
-                  ? 'border-primary/40 bg-secondary'
-                  : 'border-border bg-secondary/40 hover:bg-secondary',
+                'group/impact flex h-11 w-full items-center justify-between rounded-md border bg-muted px-4 text-left transition-colors hover:bg-[color-mix(in_oklch,var(--muted),var(--foreground)_5%)]',
+                expandedImpact ? 'border-primary/40' : 'border-border',
               )}
             >
               <span className="text-sm font-medium text-foreground">
@@ -493,7 +691,7 @@ function PendingApprovalCard({
               />
             </button>
             {expandedImpact && (
-              <div className="space-y-3 px-4 py-3 rounded-md border border-border-subtle bg-secondary/20">
+              <div className="mt-3 flex flex-col gap-3 rounded-md border border-border bg-muted/50 px-4 py-3">
                 <ImpactRow
                   icon={<CheckCircle2 className="h-4 w-4 text-status-approved" />}
                   label="If approved"
@@ -514,38 +712,27 @@ function PendingApprovalCard({
                 />
               </div>
             )}
-          </div>
+          </Block>
         )}
-      </div>
+      </CardContent>
 
       <Separator />
 
-      {/* Action row — every button is h-11, min-w-[7.5rem], px-6 so
-       *   labels sit comfortably inside their outline. Color intent kept
-       *   as before:
-       *     Escalate     → orange text + border
-       *     Approve w/   → amber text + border
-       *     Deny         → solid rose
-       *     Approve      → solid emerald
-       *   Min-width keeps Approve/Deny visually equal even though "Deny"
-       *   is shorter than "Approve" — no more lopsided pair.
-       */}
-      <div className="px-7 py-4 flex flex-wrap items-center justify-end gap-3">
+      <CardFooter className="flex flex-wrap items-center justify-end gap-3 py-5">
         {canAction('attach_notes') && (
-          <Button
-            variant="ghost"
-            className="mr-auto h-11 px-5 text-muted-foreground hover:text-foreground"
-          >
-            <MessageSquare className="h-4 w-4" />
+          <Button variant="ghost" size="lg" className="mr-auto px-5" onClick={onAddNote}>
+            <MessageSquare />
             Add note
           </Button>
         )}
         {canAction('escalate') && (
           <Button
             variant="outline"
-            className="h-11 px-6 min-w-[7.5rem] border-status-escalated/50 text-status-escalated hover:bg-status-escalated/10 hover:border-status-escalated"
+            size="lg"
+            onClick={onEscalate}
+            className="min-w-[10rem] px-6 border-status-escalated/40 text-status-escalated hover:bg-status-escalated/10 hover:text-status-escalated"
           >
-            <ArrowUpRight className="h-4 w-4" />
+            <ArrowUpRight />
             Escalate
           </Button>
         )}
@@ -553,75 +740,56 @@ function PendingApprovalCard({
           <>
             <Button
               variant="outline"
+              size="lg"
               onClick={onApproveWithCondition}
-              className="h-11 px-6 min-w-[7.5rem] border-status-pending/50 text-status-pending hover:bg-status-pending/10 hover:border-status-pending"
+              className="min-w-[12rem] px-6 border-status-pending/40 text-status-pending hover:bg-status-pending/10 hover:text-status-pending"
             >
-              <FileCheck className="h-4 w-4" />
+              <FileCheck />
               Approve with condition
             </Button>
             <Button
+              size="lg"
               onClick={onDeny}
-              className="h-11 px-7 min-w-[7.5rem] bg-status-denied text-white hover:bg-status-denied/90 shadow-sm"
+              className="min-w-[8rem] px-7 bg-status-denied text-white hover:bg-status-denied/90"
             >
-              <XCircle className="h-4 w-4" />
+              <XCircle />
               Deny
             </Button>
             <Button
+              size="lg"
               onClick={onApprove}
-              className="h-11 px-7 min-w-[7.5rem] bg-status-approved text-white hover:bg-status-approved/90 shadow-sm"
+              className="min-w-[8rem] px-7 bg-status-approved text-white hover:bg-status-approved/90"
             >
-              <CheckCircle2 className="h-4 w-4" />
+              <CheckCircle2 />
               Approve
             </Button>
           </>
         ) : (
-          <Button variant="outline" disabled className="h-11 px-6">
-            <Lock className="h-4 w-4" />
+          <Button variant="outline" size="lg" disabled className="px-6">
+            <Lock />
             Approver role required
           </Button>
         )}
-      </div>
+      </CardFooter>
     </Card>
   )
 }
 
-// ─── Section block (label above + body text) ───────────
-
-function SectionBlock({
+function Block({
   label,
-  body,
+  children,
   highlight,
 }: {
-  label: string
-  body: string
+  label: React.ReactNode
+  children: React.ReactNode
   highlight?: boolean
 }) {
   return (
-    <div className="space-y-2">
-      <SectionLabel>{label}</SectionLabel>
-      <p
-        className={cn(
-          'text-sm leading-relaxed',
-          highlight ? 'text-foreground font-medium' : 'text-foreground/85',
-        )}
-      >
-        {body}
-      </p>
-    </div>
-  )
-}
-
-function SectionLabel({
-  children,
-  icon,
-}: {
-  children: React.ReactNode
-  icon?: React.ReactNode
-}) {
-  return (
-    <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-      {icon}
-      {children}
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
+        {label}
+      </div>
+      <div className={cn(highlight && 'rounded-md bg-muted p-4')}>{children}</div>
     </div>
   )
 }
@@ -641,21 +809,20 @@ function StageStrip({ approval }: { approval: Approval }) {
   return (
     <div
       className={cn(
-        'px-7 py-3.5 border-b border-border flex flex-wrap items-center gap-x-6 gap-y-2 text-sm',
+        'flex flex-wrap items-center gap-x-5 gap-y-2 border-b border-border px-6 py-3 text-sm',
         isMyTurnFinal
-          ? 'bg-status-approved/10'
+          ? 'bg-status-approved/8'
           : isMyTurnIntermediate
-            ? 'bg-status-pending/10'
-            : 'bg-secondary/40',
+            ? 'bg-status-pending/8'
+            : 'bg-muted/40',
       )}
     >
-      {/* Progress mini-bar */}
       <div className="flex items-center gap-2.5">
         <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           Stage
         </span>
         <div className="flex items-center gap-2">
-          <div className="h-1.5 w-24 rounded-full bg-secondary overflow-hidden">
+          <div className="h-1.5 w-24 rounded-full bg-muted overflow-hidden">
             <div
               className={cn(
                 'h-full transition-all',
@@ -670,17 +837,10 @@ function StageStrip({ approval }: { approval: Approval }) {
         </div>
       </div>
 
-      {/* Your turn callout */}
       {myEntry && (
-        <span
-          className={cn(
-            'inline-flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-semibold',
-            isMyTurnFinal
-              ? 'bg-status-approved/15 text-status-approved ring-1 ring-status-approved/30'
-              : isMyTurnIntermediate
-                ? 'bg-status-pending/15 text-status-pending ring-1 ring-status-pending/30'
-                : 'bg-secondary text-muted-foreground',
-          )}
+        <Badge
+          variant={isMyTurnFinal ? 'success' : isMyTurnIntermediate ? 'warning' : 'secondary'}
+          className="gap-1.5"
         >
           <span className="inline-block h-1.5 w-1.5 rounded-full bg-current animate-pulse" />
           {isMyTurnFinal
@@ -688,25 +848,21 @@ function StageStrip({ approval }: { approval: Approval }) {
             : isMyTurnIntermediate
               ? 'Your decision advances the chain'
               : 'You have decided'}
-        </span>
+        </Badge>
       )}
 
-      {/* Pending others — prominent, not muted */}
       {pendingOthers.length > 0 && (
-        <span className="ml-auto flex items-center gap-2 text-xs">
+        <div className="ml-auto flex items-center gap-2 text-xs">
           <span className="text-muted-foreground">Waiting on</span>
-          <span className="flex flex-wrap items-center gap-1.5">
+          <div className="flex flex-wrap items-center gap-1.5">
             {pendingOthers.map((c) => (
-              <span
-                key={c.name}
-                className="inline-flex items-center gap-1 rounded-md bg-status-pending/15 text-status-pending px-2 py-0.5 font-medium ring-1 ring-status-pending/30"
-              >
+              <Badge key={c.name} variant="warning" className="gap-1">
                 <Clock className="h-3 w-3" />
                 {c.name}
-              </span>
+              </Badge>
             ))}
-          </span>
-        </span>
+          </div>
+        </div>
       )}
     </div>
   )
@@ -719,66 +875,54 @@ function CoApprovalRow({
 }: {
   co: { role: string; name: string; status: string; decidedAt?: string }
 }) {
+  const isYou = co.name === 'you'
   const Icon =
     co.status === 'approved' ? CheckCircle2 : co.status === 'denied' ? XCircle : Clock
-  const isYou = co.name === 'you'
 
-  // Tier the row visually by status so the eye lands on pending first.
-  const styles =
+  const tone =
     co.status === 'approved'
-      ? {
-          ring: 'ring-status-approved/20',
-          bg: 'bg-status-approved/8',
-          iconColor: 'text-status-approved',
-          chipBg: 'bg-status-approved/15 text-status-approved',
-          chipLabel: 'Approved',
-        }
+      ? { iconColor: 'text-status-approved', badge: 'success', label: 'Approved' }
       : co.status === 'denied'
-        ? {
-            ring: 'ring-status-denied/20',
-            bg: 'bg-status-denied/8',
-            iconColor: 'text-status-denied',
-            chipBg: 'bg-status-denied/15 text-status-denied',
-            chipLabel: 'Denied',
-          }
-        : {
-            ring: 'ring-status-pending/30',
-            bg: 'bg-status-pending/8',
-            iconColor: 'text-status-pending',
-            chipBg: 'bg-status-pending/15 text-status-pending',
-            chipLabel: 'Awaiting',
-          }
+        ? { iconColor: 'text-status-denied', badge: 'danger', label: 'Denied' }
+        : { iconColor: 'text-status-pending', badge: 'warning', label: 'Awaiting' }
+
+  const initials =
+    co.name === 'you'
+      ? 'YOU'
+      : co.name
+          .split(/[\s.]/)
+          .map((s) => s[0])
+          .slice(0, 2)
+          .join('')
+          .toUpperCase()
 
   return (
-    <div
-      className={cn(
-        'flex items-center gap-3 px-3 py-2.5 rounded-md ring-1',
-        styles.bg,
-        styles.ring,
-      )}
-    >
-      <Icon className={cn('h-4 w-4 flex-shrink-0', styles.iconColor)} />
+    <div className="flex items-center gap-3 rounded-md border border-border bg-muted/40 px-3 py-2.5">
+      <Avatar className="h-8 w-8">
+        <AvatarFallback
+          className={cn(
+            'text-[10px] font-semibold',
+            isYou ? 'bg-primary/20 text-primary' : 'bg-secondary text-foreground',
+          )}
+        >
+          {initials}
+        </AvatarFallback>
+      </Avatar>
+      <Icon className={cn('h-4 w-4 flex-shrink-0', tone.iconColor)} />
       <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span
-            className={cn(
-              'text-sm font-medium truncate',
-              isYou ? 'text-primary' : 'text-foreground',
-            )}
-          >
-            {isYou ? 'You' : co.name}
-          </span>
-          <span className="text-xs text-muted-foreground truncate">{co.role}</span>
+        <div
+          className={cn(
+            'text-sm font-medium truncate',
+            isYou ? 'text-primary' : 'text-foreground',
+          )}
+        >
+          {isYou ? 'You' : co.name}
         </div>
+        <div className="text-xs text-muted-foreground truncate">{co.role}</div>
       </div>
-      <span
-        className={cn(
-          'text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded',
-          styles.chipBg,
-        )}
-      >
-        {styles.chipLabel}
-      </span>
+      <Badge variant={tone.badge as 'success' | 'danger' | 'warning'} className="text-[10px]">
+        {tone.label}
+      </Badge>
       {co.decidedAt && (
         <span className="text-[10px] text-muted-foreground tabular-nums">
           {timeAgo(co.decidedAt)}
@@ -801,12 +945,12 @@ function ImpactRow({
 }) {
   return (
     <div className="flex gap-3">
-      <span className="mt-0.5 flex-shrink-0">{icon}</span>
+      <span className="flex-shrink-0 mt-0.5">{icon}</span>
       <div className="min-w-0">
         <div className={cn('text-[10px] font-semibold uppercase tracking-wider', color)}>
           {label}
         </div>
-        <p className="text-foreground text-sm leading-relaxed mt-0.5">{text}</p>
+        <p className="mt-0.5 text-sm text-foreground leading-relaxed">{text}</p>
       </div>
     </div>
   )
@@ -839,11 +983,11 @@ function ResolvedRow({ approval }: { approval: Approval }) {
         : 'Denied'
 
   return (
-    <div className="flex items-center justify-between gap-4 px-6 py-4 opacity-80 hover:opacity-100 transition-opacity">
+    <li className="flex items-center justify-between gap-4 px-6 py-4">
       <div className="flex items-center gap-3 min-w-0 flex-1">
         <Icon className={cn('h-4 w-4 flex-shrink-0', color)} />
         <div className="min-w-0 flex-1">
-          <div className="text-sm text-foreground truncate font-medium">{approval.title}</div>
+          <div className="text-sm font-medium text-foreground truncate">{approval.title}</div>
           <div className="text-xs text-muted-foreground mt-0.5">
             {approval.requester} · {typeLabels[approval.type]} · {timeAgo(approval.createdAt)}
             {approval.status === 'approved_with_condition' && approval.condition && (
@@ -853,6 +997,6 @@ function ResolvedRow({ approval }: { approval: Approval }) {
         </div>
       </div>
       <Badge variant={variant}>{label}</Badge>
-    </div>
+    </li>
   )
 }

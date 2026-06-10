@@ -213,6 +213,19 @@ export const api = {
     const params = filters ? '?' + new URLSearchParams(filters).toString() : ''
     return apiFetch<PolicyRule[]>(`/policies${params}`)
   },
+  createPolicyRule: (body: import('@/types').PolicyRuleInput) =>
+    apiFetch<PolicyRule>('/policies', { method: 'POST', body: JSON.stringify(body) }),
+  updatePolicyRule: (id: string, body: Partial<import('@/types').PolicyRuleInput>) =>
+    apiFetch<PolicyRule>(`/policies/${id}`, {
+      method: 'PATCH',
+      headers:
+        typeof body.expectedVersion === 'number'
+          ? { 'If-Match': `"${body.expectedVersion}"` }
+          : undefined,
+      body: JSON.stringify(body),
+    }),
+  deletePolicyRule: (id: string, hard = false) =>
+    apiFetch<PolicyRule | void>(`/policies/${id}${hard ? '?hard=true' : ''}`, { method: 'DELETE' }),
 
   // Settings
   getIntegrations: () =>

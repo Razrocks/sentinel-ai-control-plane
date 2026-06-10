@@ -239,6 +239,7 @@ const resultDecisionStyles: Record<string, { bg: string; text: string; icon: typ
 
 export function ChatPanel() {
   const [isExpanded, setIsExpanded] = useState(false)
+  const [fullscreen, setFullscreen] = useState(false)
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [isStreaming, setIsStreaming] = useState(false)
@@ -358,8 +359,8 @@ export function ChatPanel() {
       <div className="space-y-2">
         {label && (
           <div className="flex items-center gap-1.5">
-            <TypeIcon className={`w-3 h-3 ${msg.type === 'guardrail' ? 'text-risk-high' : msg.type === 'code_snippet' ? 'text-status-approved' : 'text-accent'}`} />
-            <span className={`text-[10px] font-medium uppercase tracking-wider ${msg.type === 'guardrail' ? 'text-risk-high' : msg.type === 'code_snippet' ? 'text-status-approved' : 'text-accent'}`}>{label}</span>
+            <TypeIcon className={`w-3 h-3 ${msg.type === 'guardrail' ? 'text-risk-high' : msg.type === 'code_snippet' ? 'text-status-approved' : 'text-primary'}`} />
+            <span className={`text-[10px] font-medium uppercase tracking-wider ${msg.type === 'guardrail' ? 'text-risk-high' : msg.type === 'code_snippet' ? 'text-status-approved' : 'text-primary'}`}>{label}</span>
           </div>
         )}
         <div className={cn(
@@ -367,8 +368,8 @@ export function ChatPanel() {
           msg.type === 'guardrail'
             ? 'bg-risk-high/10 text-risk-high border border-risk-high/20'
             : msg.type === 'code_snippet'
-            ? 'bg-background text-text-primary border border-border font-mono text-xs'
-            : 'bg-surface-raised text-text-primary border border-border'
+            ? 'bg-background text-foreground border border-border font-mono text-xs'
+            : 'bg-muted text-foreground border border-border'
         )}>
           {msg.content}
         </div>
@@ -390,52 +391,81 @@ export function ChatPanel() {
             {result.decision.replace('_', ' ')}
           </span>
         </div>
-        <p className="text-xs text-text-secondary">{result.summary}</p>
+        <p className="text-xs text-foreground/80">{result.summary}</p>
         {result.policyRule && (
           <div className="flex items-center gap-1 mt-1">
-            <Shield className="w-3 h-3 text-text-muted" />
-            <span className="text-[10px] text-text-muted font-mono">{result.policyRule}</span>
+            <Shield className="w-3 h-3 text-muted-foreground" />
+            <span className="text-[10px] text-muted-foreground font-mono">{result.policyRule}</span>
           </div>
         )}
       </div>
     )
   }
 
-  return (
-    <div className={cn(
-      'fixed bottom-0 right-0 z-30 bg-card border-t border-border transition-all duration-200',
-      isExpanded ? 'h-[420px]' : 'h-14'
-    )} style={{ left: '15rem' }}>
-      {/* Collapsed bar / Header */}
-      <div
-        className="flex items-center justify-between h-14 px-4 cursor-pointer select-none"
-        onClick={() => { setIsExpanded(!isExpanded); if (!isExpanded) setTimeout(() => inputRef.current?.focus(), 200) }}
+  // Collapsed = small round floating button bottom-right.
+  // Expanded = floating panel with rounded-2xl border, header includes
+  // fullscreen toggle.
+  if (!isExpanded) {
+    return (
+      <button
+        type="button"
+        onClick={() => {
+          setIsExpanded(true)
+          setTimeout(() => inputRef.current?.focus(), 200)
+        }}
+        className={cn(
+          'fixed bottom-6 right-6 z-40',
+          'flex h-14 w-14 items-center justify-center rounded-full',
+          'bg-primary text-primary-foreground shadow-lg ring-1 ring-foreground/10',
+          'hover:scale-105 hover:shadow-xl transition-all',
+        )}
+        aria-label="Open Sentinel chat"
       >
-        <div className="flex items-center gap-3">
-          <Bot className="w-5 h-5 text-accent" />
-          <span className="text-sm font-medium text-text-primary">Sentinel</span>
-          <span className="text-[10px] px-1.5 py-0.5 rounded bg-accent/10 text-accent font-medium">{guardrail.label}</span>
-          {messages.length > 0 && (
-            <span className="text-[10px] text-text-muted bg-surface-raised px-1.5 py-0.5 rounded">
-              {messages.filter(m => m.role === 'assistant').length} responses
-            </span>
-          )}
+        <Bot className="h-6 w-6" />
+      </button>
+    )
+  }
+
+  return (
+    <div
+      className={cn(
+        'fixed z-40 flex flex-col bg-card text-card-foreground shadow-2xl ring-1 ring-foreground/10 transition-all',
+        fullscreen
+          ? 'inset-4 rounded-2xl'
+          : 'bottom-6 right-6 h-[560px] w-[420px] rounded-2xl',
+      )}
+    >
+      {/* Header */}
+      <div className="flex items-center justify-between gap-3 border-b border-border px-4 py-3">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary/15 text-primary flex-shrink-0">
+            <Bot className="h-4 w-4" />
+          </div>
+          <div className="min-w-0">
+            <div className="text-sm font-semibold text-foreground">Sentinel</div>
+            <div className="text-[10px] text-muted-foreground truncate">{guardrail.label}</div>
+          </div>
         </div>
-        <div className="flex items-center gap-3">
-          {!isExpanded && (
-            <div className="hidden md:flex items-center gap-1.5">
-              {quickActions.slice(0, 2).map(qa => (
-                <button
-                  key={qa.label}
-                  onClick={e => { e.stopPropagation(); sendMessage(qa.prompt) }}
-                  className="px-2.5 py-1 rounded-full bg-surface-raised border border-border text-xs text-text-muted hover:text-accent hover:border-accent/30 transition-colors"
-                >
-                  {qa.label}
-                </button>
-              ))}
-            </div>
-          )}
-          <ChevronUp className={cn('w-4 h-4 text-text-muted transition-transform', isExpanded && 'rotate-180')} />
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => setFullscreen(!fullscreen)}
+            className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+            title={fullscreen ? 'Exit fullscreen' : 'Fullscreen'}
+          >
+            {fullscreen ? '⤡' : '⤢'}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setIsExpanded(false)
+              setFullscreen(false)
+            }}
+            className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+            title="Minimize"
+          >
+            <ChevronUp className="h-4 w-4 rotate-180" />
+          </button>
         </div>
       </div>
 
@@ -443,7 +473,7 @@ export function ChatPanel() {
       {isExpanded && (
         <div className="flex flex-col h-[calc(100%-3.5rem)]">
           {/* Guardrail banner */}
-          <div className="px-4 py-1.5 bg-surface-raised/50 border-b border-border flex items-center gap-2 text-[10px] text-text-muted overflow-x-auto no-scrollbar">
+          <div className="px-4 py-1.5 bg-muted/50 border-b border-border flex items-center gap-2 text-[10px] text-muted-foreground overflow-x-auto no-scrollbar">
             <Lock className="w-3 h-3 flex-shrink-0" />
             {guardrail.constraints.map((c, i) => (
               <span key={i} className="flex items-center gap-2 flex-shrink-0">
@@ -457,7 +487,7 @@ export function ChatPanel() {
           <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
             {messages.length === 0 && (
               <div className="py-2">
-                <p className="text-xs text-text-muted mb-3">Quick actions for {config.label}:</p>
+                <p className="text-xs text-muted-foreground mb-3">Quick actions for {config.label}:</p>
                 <div className="flex flex-wrap gap-1.5">
                   {quickActions.map(qa => {
                     const QAIcon = qa.icon
@@ -465,9 +495,9 @@ export function ChatPanel() {
                       <button
                         key={qa.label}
                         onClick={() => sendMessage(qa.prompt)}
-                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-surface-raised border border-border text-xs text-text-secondary hover:text-text-primary hover:border-accent/30 transition-colors"
+                        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-muted border border-border text-xs text-foreground/80 hover:text-foreground hover:border-accent/30 transition-colors"
                       >
-                        <QAIcon className="w-3 h-3 text-accent" />
+                        <QAIcon className="w-3 h-3 text-primary" />
                         {qa.label}
                       </button>
                     )
@@ -479,7 +509,7 @@ export function ChatPanel() {
               <div key={msg.id} className={cn('flex', msg.role === 'user' ? 'justify-end' : 'justify-start')}>
                 <div className="max-w-[75%]">
                   {msg.role === 'user' ? (
-                    <div className="bg-accent text-white rounded-lg px-3 py-2 text-sm">
+                    <div className="bg-primary text-white rounded-lg px-3 py-2 text-sm">
                       {msg.content}
                     </div>
                   ) : (
@@ -499,7 +529,7 @@ export function ChatPanel() {
                   <button
                     key={qa.label}
                     onClick={() => sendMessage(qa.prompt)}
-                    className="flex-shrink-0 px-2.5 py-1 rounded-full bg-surface-raised border border-border text-xs text-text-muted hover:text-accent hover:border-accent/30 transition-colors"
+                    className="flex-shrink-0 px-2.5 py-1 rounded-full bg-muted border border-border text-xs text-muted-foreground hover:text-primary hover:border-accent/30 transition-colors"
                   >
                     {qa.label}
                   </button>
@@ -519,12 +549,12 @@ export function ChatPanel() {
                 onKeyDown={e => e.key === 'Enter' && !isStreaming && handleSend()}
                 placeholder={isStreaming ? 'Sentinel is thinking...' : `Ask Sentinel (${guardrail.label})...`}
                 disabled={isStreaming}
-                className="flex-1 h-9 rounded-md border border-border-subtle bg-surface-raised px-3 text-sm text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-60"
+                className="flex-1 h-9 rounded-md border border-border bg-muted px-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-60"
               />
               <button
                 onClick={handleSend}
                 disabled={!input.trim() || isStreaming}
-                className="h-9 px-3 rounded-md bg-accent text-white hover:bg-accent-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                className="h-9 px-3 rounded-md bg-primary text-white hover:bg-primary-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 {isStreaming ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
               </button>

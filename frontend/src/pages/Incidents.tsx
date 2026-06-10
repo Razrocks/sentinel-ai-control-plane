@@ -16,6 +16,9 @@ import {
   Clock,
   ArrowUpRight,
   CheckCircle2,
+  Activity,
+  Flame,
+  Repeat,
 } from 'lucide-react'
 import { createColumnHelper } from '@tanstack/react-table'
 import { useIncidents } from '@/hooks/useData'
@@ -24,6 +27,7 @@ import { DataTable } from '@/components/shared/DataTable'
 import { timeAgo, cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Card, CardContent } from '@/components/ui/card'
 import type { Incident } from '@/types'
 
 const sevToBadge: Record<
@@ -212,17 +216,35 @@ const columns = [
 export default function Incidents() {
   const { data: incidents = [], isLoading } = useIncidents()
 
+  const stats = {
+    total: incidents.length,
+    critical: incidents.filter(i => i.severity === 'sev1').length,
+    open: incidents.filter(i => i.status !== 'resolved').length,
+    recurring: incidents.filter(i => i.isRecurring).length,
+  }
+
   return (
-    <div>
-      <div className="mb-6">
-        <h1 className="text-3xl font-semibold text-foreground tracking-tight">Incidents</h1>
-        <p className="text-base text-muted-foreground mt-4">
-          ServiceNow incidents and support issues
+    <div className="flex flex-col gap-10">
+      <div className="flex flex-col gap-3">
+        <h1 className="font-heading text-3xl font-medium tracking-tight text-foreground">
+          Incidents
+        </h1>
+        <p className="text-sm text-muted-foreground">
+          Operational incidents and support issues.
         </p>
       </div>
 
+      {!isLoading && (
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+          <KPI label="Total" value={stats.total} icon={<Activity className="h-4 w-4 text-muted-foreground" />} />
+          <KPI label="Sev1 critical" value={stats.critical} icon={<Flame className="h-4 w-4 text-risk-critical" />} tone="risk" />
+          <KPI label="Open" value={stats.open} icon={<Clock className="h-4 w-4 text-status-pending" />} tone="warn" />
+          <KPI label="Recurring" value={stats.recurring} icon={<Repeat className="h-4 w-4 text-primary" />} tone="info" />
+        </div>
+      )}
+
       {isLoading ? (
-        <div className="space-y-3">
+        <div className="flex flex-col gap-3">
           <Skeleton className="h-10 w-full max-w-md" />
           <Skeleton className="h-96 w-full" />
         </div>
@@ -234,5 +256,44 @@ export default function Incidents() {
         />
       )}
     </div>
+  )
+}
+
+function KPI({
+  label,
+  value,
+  icon,
+  tone,
+}: {
+  label: string
+  value: number
+  icon: React.ReactNode
+  tone?: 'risk' | 'warn' | 'ok' | 'info'
+}) {
+  return (
+    <Card>
+      <CardContent className="flex items-center justify-between gap-3 p-5">
+        <div className="flex flex-col gap-1.5 min-w-0 overflow-hidden">
+          <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground truncate">
+            {label}
+          </span>
+          <span
+            className={cn(
+              'text-3xl font-semibold tabular-nums tracking-tight',
+              tone === 'risk' && value > 0 && 'text-risk-critical',
+              tone === 'warn' && value > 0 && 'text-status-pending',
+              tone === 'ok' && value > 0 && 'text-status-approved',
+              tone === 'info' && value > 0 && 'text-primary',
+              !tone && 'text-foreground',
+            )}
+          >
+            {value}
+          </span>
+        </div>
+        <div className="flex h-10 w-10 items-center justify-center rounded-md bg-muted">
+          {icon}
+        </div>
+      </CardContent>
+    </Card>
   )
 }

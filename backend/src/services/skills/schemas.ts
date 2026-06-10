@@ -297,6 +297,11 @@ export const SupportApprovalDecisionInput = z.object({
         name: z.string(),
         description: z.string(),
         decision: PolicyDecision,
+        // Admin-authored context. Optional so older agent input payloads
+        // (without these fields) still validate; new ones get richer prompts.
+        rationale: z.string().nullable().optional(),
+        examples: z.array(z.string()).optional(),
+        tags: z.array(z.string()).optional(),
       }),
     ),
     activeFreezesAffecting: z.array(z.string()),

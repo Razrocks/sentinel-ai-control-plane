@@ -40,7 +40,18 @@
       "Bash(echo \"EXIT: $?\")",
       "Bash(git check-ignore *)",
       "Bash(echo \"exit: $?\")",
-      "Bash(cd /c/Users/Razeen/Desktop/Harness/backend && npx tsc --noEmit 2>&1 | tail -5 && echo \"---\" && cd ../frontend && npx tsc --noEmit 2>&1 | tail -5)"
+      "Bash(cd /c/Users/Razeen/Desktop/Harness/backend && npx tsc --noEmit 2>&1 | tail -5 && echo \"---\" && cd ../frontend && npx tsc --noEmit 2>&1 | tail -5)",
+      "Bash(npx --yes shadcn@latest add button card dialog input label tabs table badge separator skeleton alert tooltip dropdown-menu select checkbox textarea sonner --yes --overwrite)",
+      "Bash(npx --yes shadcn@latest add card button --yes)",
+      "Bash(cp /c/Users/Razeen/Desktop/shadcn-sandbox/preset-app/src/components/ui/*.tsx /c/Users/Razeen/Desktop/Harness/frontend/src/components/ui/ 2>&1 *)",
+      "Bash(npx --yes shadcn@latest add button card dialog input label tabs table badge separator skeleton alert tooltip dropdown-menu select checkbox textarea sonner --yes)",
+      "Bash(tee /tmp/tsc-out.txt)",
+      "Bash(npx --yes shadcn@latest add sidebar sheet scroll-area avatar accordion popover command --yes)",
+      "Bash(yes n *)",
+      "Bash(npx --yes shadcn@latest add sidebar sheet scroll-area avatar accordion popover command)",
+      "Bash(sed -i -e 's/text-\\\\[9px\\\\]/text-xs/g' -e 's/text-\\\\[10px\\\\]/text-xs/g' -e 's/text-\\\\[11px\\\\]/text-xs/g' -e s/text-text-primary/text-foreground/g -e 's/text-text-secondary/text-foreground\\\\/85/g' -e s/text-text-muted/text-muted-foreground/g -e s/bg-surface-raised/bg-muted/g -e 's/bg-surface\\\\b/bg-card/g' -e 's/text-accent\\\\b/text-primary/g' -e 's/bg-accent\\\\b/bg-primary/g' -e 's/border-accent\\\\b/border-primary/g' src/components/shared/ContextualAssistant.tsx)",
+      "Bash(sed -i -e 's/px-2 py-1.5 text-xs/px-3 py-2 text-sm/g' -e 's/w-2.5 h-2.5/w-3 h-3/g' -e 's/px-2.5 py-1.5 text-xs/px-3 py-2 text-sm/g' src/components/shared/ContextualAssistant.tsx)",
+      "Bash(grep -n 'Right.*Action\\\\|AI Analysis\\\\|AVAILABLE NOW\\\\|space-y-4\">$' /c/Users/Razeen/Desktop/Harness/frontend/src/pages/ChangeDetail.tsx)"
     ]
   }
 }

@@ -14,6 +14,7 @@ import {
   Clock,
   CheckCircle2,
   XCircle,
+  ShieldAlert,
 } from 'lucide-react'
 import { createColumnHelper, type ColumnDef } from '@tanstack/react-table'
 import { useAccessRequests } from '@/hooks/useData'
@@ -23,6 +24,7 @@ import { timeAgo, cn } from '@/lib/utils'
 import { useRole } from '@/lib/roles'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Card, CardContent } from '@/components/ui/card'
 import type { AccessRequest } from '@/types'
 
 function riskToBadge(level: string) {
@@ -236,19 +238,37 @@ export default function AccessRequests() {
   const columns = useMemo(() => buildColumns(isAccessApprover), [isAccessApprover])
   const { data: accessRequests = [], isLoading } = useAccessRequests()
 
+  const stats = {
+    total: accessRequests.length,
+    pending: accessRequests.filter(r => r.status === 'pending').length,
+    ineligible: accessRequests.filter(r => r.entitlementCheck === 'ineligible').length,
+    approved: accessRequests.filter(r => r.status === 'approved').length,
+  }
+
   return (
-    <div>
-      <div className="mb-6">
-        <h1 className="text-3xl font-semibold text-foreground tracking-tight">Access Requests</h1>
-        <p className="text-base text-muted-foreground mt-4">
+    <div className="flex flex-col gap-10">
+      <div className="flex flex-col gap-3">
+        <h1 className="font-heading text-3xl font-medium tracking-tight text-foreground">
+          Access Requests
+        </h1>
+        <p className="text-sm text-muted-foreground">
           {isAccessApprover
-            ? 'Access requests in your approval scope'
-            : 'Access and entitlement requests with approval routing'}
+            ? 'Access requests in your approval scope.'
+            : 'Access and entitlement requests with approval routing.'}
         </p>
       </div>
 
+      {!isLoading && (
+        <div className="grid grid-cols-2 gap-4 md:grid-cols-4">
+          <KPI label="Total" value={stats.total} icon={<KeyRound className="h-4 w-4 text-muted-foreground" />} />
+          <KPI label="Pending" value={stats.pending} icon={<Clock className="h-4 w-4 text-status-pending" />} tone="warn" />
+          <KPI label="Ineligible" value={stats.ineligible} icon={<ShieldAlert className="h-4 w-4 text-risk-critical" />} tone="risk" />
+          <KPI label="Approved" value={stats.approved} icon={<CheckCircle2 className="h-4 w-4 text-status-approved" />} tone="ok" />
+        </div>
+      )}
+
       {isLoading ? (
-        <div className="space-y-3">
+        <div className="flex flex-col gap-3">
           <Skeleton className="h-10 w-full max-w-md" />
           <Skeleton className="h-96 w-full" />
         </div>
@@ -260,5 +280,43 @@ export default function AccessRequests() {
         />
       )}
     </div>
+  )
+}
+
+function KPI({
+  label,
+  value,
+  icon,
+  tone,
+}: {
+  label: string
+  value: number
+  icon: React.ReactNode
+  tone?: 'risk' | 'warn' | 'ok'
+}) {
+  return (
+    <Card>
+      <CardContent className="flex items-center justify-between gap-3 p-5">
+        <div className="flex flex-col gap-1.5 min-w-0 overflow-hidden">
+          <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground truncate">
+            {label}
+          </span>
+          <span
+            className={cn(
+              'text-3xl font-semibold tabular-nums tracking-tight',
+              tone === 'risk' && value > 0 && 'text-risk-critical',
+              tone === 'warn' && value > 0 && 'text-status-pending',
+              tone === 'ok' && value > 0 && 'text-status-approved',
+              !tone && 'text-foreground',
+            )}
+          >
+            {value}
+          </span>
+        </div>
+        <div className="flex h-10 w-10 items-center justify-center rounded-md bg-muted">
+          {icon}
+        </div>
+      </CardContent>
+    </Card>
   )
 }

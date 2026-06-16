@@ -1,6 +1,29 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { apiFetch, ApiError } from '@/lib/api'
 import type { Approval, Change, AccessRequest, Incident } from '@/types'
+import { toast } from '@/components/ui/sonner'
+
+/**
+ * Pull the most useful end-user message out of an API/network error.
+ * Backend errors usually carry a `{ message }` body; if not, fall back to
+ * the Error message. We avoid surfacing raw exception strings (eg
+ * "TypeError: Failed to fetch") and replace them with something
+ * actionable when possible.
+ */
+function readableError(err: Error, fallback = 'Something went wrong.'): string {
+  if (err instanceof ApiError) {
+    const body = err.body as { message?: string } | undefined
+    if (body?.message) return body.message
+    if (err.status === 401) return 'Session expired. Please log in again.'
+    if (err.status === 403) return 'Not allowed by current role / policy.'
+    if (err.status === 404) return 'Not found.'
+    if (err.status === 409) return 'Conflict — the record changed since you loaded it.'
+    if (err.status === 412) return 'Out of date — refresh and try again.'
+    if (err.status >= 500) return 'Server error. Try again in a moment.'
+    return err.message || fallback
+  }
+  return err.message || fallback
+}
 
 // ─── Types ──────────────────────────────────────────────
 
@@ -103,12 +126,19 @@ export function useApprovalDecision() {
         throw err
       }
     },
-    onSuccess: () => {
+    onSuccess: (_data, vars) => {
       // Invalidate all related caches
       queryClient.invalidateQueries({ queryKey: ['approvals'] })
       queryClient.invalidateQueries({ queryKey: ['changes'] })
       queryClient.invalidateQueries({ queryKey: ['accessRequests'] })
       queryClient.invalidateQueries({ queryKey: ['auditEvents'] })
+      const verb =
+        vars.decision === 'approved'
+          ? 'Approved'
+          : vars.decision === 'denied'
+            ? 'Denied'
+            : 'Approved with condition'
+      toast.success(`${verb}`)
     },
     onError: async (err) => {
       // On a stale-version conflict, force a refetch (not just invalidate)
@@ -118,7 +148,12 @@ export function useApprovalDecision() {
       // user's next click sends the correct `If-Match`.
       if (err instanceof ApprovalConflictError) {
         await queryClient.refetchQueries({ queryKey: ['approvals'], type: 'active' })
+        toast.warning('Approval changed since you loaded it', {
+          description: 'Refreshed — review the new state and try again.',
+        })
+        return
       }
+      toast.error('Could not save decision', { description: readableError(err) })
     },
   })
 }
@@ -139,6 +174,54 @@ export function useApprovalAddNote() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['approvals'] })
       queryClient.invalidateQueries({ queryKey: ['auditEvents'] })
+      toast.success('Note added')
+    },
+    onError: (err) => {
+      toast.error('Could not add note', { description: readableError(err) })
+    },
+  })
+}
+
+/**
+ * Edit an existing approval note. Only original author or admin allowed
+ * server-side; UI gates the affordance the same way.
+ */
+export function useEditApprovalNote() {
+  const queryClient = useQueryClient()
+  return useMutation<unknown, Error, { id: string; noteId: string; content: string }>({
+    mutationFn: async ({ id, noteId, content }) => {
+      return apiFetch(`/approvals/${id}/note/${noteId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ content }),
+      })
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['approvals'] })
+      queryClient.invalidateQueries({ queryKey: ['auditEvents'] })
+      toast.success('Note updated')
+    },
+    onError: (err) => {
+      toast.error('Could not update note', { description: readableError(err) })
+    },
+  })
+}
+
+/**
+ * Soft-delete an approval note. Author or admin only.
+ */
+export function useDeleteApprovalNote() {
+  const queryClient = useQueryClient()
+  return useMutation<unknown, Error, { id: string; noteId: string }>({
+    mutationFn: async ({ id, noteId }) => {
+      return apiFetch(`/approvals/${id}/note/${noteId}`, { method: 'DELETE' })
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['approvals'] })
+      queryClient.invalidateQueries({ queryKey: ['auditEvents'] })
+      toast.success('Note deleted')
+    },
+    onError: (err) => {
+      toast.error('Could not delete note', { description: readableError(err) })
     },
   })
 }
@@ -175,11 +258,17 @@ export function useApprovalEscalate() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['approvals'] })
       queryClient.invalidateQueries({ queryKey: ['auditEvents'] })
+      toast.success('Escalated to senior reviewer')
     },
     onError: async (err) => {
       if (err instanceof ApprovalConflictError) {
         await queryClient.refetchQueries({ queryKey: ['approvals'], type: 'active' })
+        toast.warning('Approval changed since you loaded it', {
+          description: 'Refreshed — review the new state and try again.',
+        })
+        return
       }
+      toast.error('Could not escalate', { description: readableError(err) })
     },
   })
 }
@@ -202,6 +291,10 @@ export function useChangeExecute() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['changes'] })
       queryClient.invalidateQueries({ queryKey: ['auditEvents'] })
+      toast.success('Change executed')
+    },
+    onError: (err) => {
+      toast.error('Could not execute change', { description: readableError(err) })
     },
   })
 }
@@ -221,6 +314,10 @@ export function useChangeSimulate() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['auditEvents'] })
+      toast.success('Simulation complete')
+    },
+    onError: (err) => {
+      toast.error('Simulation failed', { description: readableError(err) })
     },
   })
 }
@@ -241,6 +338,10 @@ export function useChangeEscalate() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['changes'] })
       queryClient.invalidateQueries({ queryKey: ['auditEvents'] })
+      toast.success('Change escalated')
+    },
+    onError: (err) => {
+      toast.error('Could not escalate', { description: readableError(err) })
     },
   })
 }
@@ -260,10 +361,14 @@ export function useAccessRequestDecide() {
         body: JSON.stringify({ decision, role }),
       })
     },
-    onSuccess: () => {
+    onSuccess: (_data, vars) => {
       queryClient.invalidateQueries({ queryKey: ['accessRequests'] })
       queryClient.invalidateQueries({ queryKey: ['approvals'] })
       queryClient.invalidateQueries({ queryKey: ['auditEvents'] })
+      toast.success(`Access request ${vars.decision}`)
+    },
+    onError: (err) => {
+      toast.error('Could not record decision', { description: readableError(err) })
     },
   })
 }
@@ -283,10 +388,185 @@ export function useIncidentUpdateStatus() {
         body: JSON.stringify({ status }),
       })
     },
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['incidents'] })
+      queryClient.invalidateQueries({ queryKey: ['auditEvents'] })
+      toast.success(`Incident → ${vars.status}`)
+    },
+    onError: (err) => {
+      toast.error('Could not update incident', { description: readableError(err) })
+    },
+  })
+}
+
+/**
+ * Attach a note (work_note or customer_reply) to an incident.
+ */
+export function useIncidentAddNote() {
+  const queryClient = useQueryClient()
+  return useMutation<unknown, Error, { id: string; content: string; kind?: 'work_note' | 'customer_reply' }>({
+    mutationFn: async ({ id, content, kind }) => {
+      return apiFetch(`/incidents/${id}/note`, {
+        method: 'POST',
+        body: JSON.stringify({ content, kind }),
+      })
+    },
+    onSuccess: (_d, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['incidents'] })
+      queryClient.invalidateQueries({ queryKey: ['auditEvents'] })
+      toast.success(vars.kind === 'customer_reply' ? 'Customer reply drafted' : 'Work note added')
+    },
+    onError: (err) => toast.error('Could not add note', { description: readableError(err) }),
+  })
+}
+
+export function useIncidentEditNote() {
+  const queryClient = useQueryClient()
+  return useMutation<unknown, Error, { id: string; noteId: string; content: string }>({
+    mutationFn: async ({ id, noteId, content }) => {
+      return apiFetch(`/incidents/${id}/note/${noteId}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ content }),
+      })
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['incidents'] })
       queryClient.invalidateQueries({ queryKey: ['auditEvents'] })
+      toast.success('Note updated')
     },
+    onError: (err) => toast.error('Could not update note', { description: readableError(err) }),
+  })
+}
+
+export function useIncidentDeleteNote() {
+  const queryClient = useQueryClient()
+  return useMutation<unknown, Error, { id: string; noteId: string }>({
+    mutationFn: async ({ id, noteId }) => apiFetch(`/incidents/${id}/note/${noteId}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['incidents'] })
+      queryClient.invalidateQueries({ queryKey: ['auditEvents'] })
+      toast.success('Note deleted')
+    },
+    onError: (err) => toast.error('Could not delete note', { description: readableError(err) }),
+  })
+}
+
+export function useIncidentEscalate() {
+  const queryClient = useQueryClient()
+  return useMutation<unknown, Error, { id: string; reason: string }>({
+    mutationFn: async ({ id, reason }) =>
+      apiFetch(`/incidents/${id}/escalate`, {
+        method: 'POST',
+        body: JSON.stringify({ reason }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['incidents'] })
+      queryClient.invalidateQueries({ queryKey: ['auditEvents'] })
+      toast.success('Incident escalated')
+    },
+    onError: (err) => toast.error('Could not escalate', { description: readableError(err) }),
+  })
+}
+
+export function useIncidentRoute() {
+  const queryClient = useQueryClient()
+  return useMutation<unknown, Error, { id: string; team: string }>({
+    mutationFn: async ({ id, team }) =>
+      apiFetch(`/incidents/${id}/route`, {
+        method: 'POST',
+        body: JSON.stringify({ team }),
+      }),
+    onSuccess: (_d, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['incidents'] })
+      queryClient.invalidateQueries({ queryKey: ['auditEvents'] })
+      toast.success(`Routed to ${vars.team}`)
+    },
+    onError: (err) => toast.error('Could not route', { description: readableError(err) }),
+  })
+}
+
+export function useIncidentLinkKB() {
+  const queryClient = useQueryClient()
+  return useMutation<unknown, Error, { id: string; kbArticleId: string }>({
+    mutationFn: async ({ id, kbArticleId }) =>
+      apiFetch(`/incidents/${id}/link-kb`, {
+        method: 'POST',
+        body: JSON.stringify({ kbArticleId }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['incidents'] })
+      queryClient.invalidateQueries({ queryKey: ['auditEvents'] })
+      toast.success('KB article linked')
+    },
+    onError: (err) => toast.error('Could not link KB', { description: readableError(err) }),
+  })
+}
+
+export function useIncidentUnlinkKB() {
+  const queryClient = useQueryClient()
+  return useMutation<unknown, Error, { id: string; kbArticleId: string }>({
+    mutationFn: async ({ id, kbArticleId }) =>
+      apiFetch(`/incidents/${id}/unlink-kb`, {
+        method: 'POST',
+        body: JSON.stringify({ kbArticleId }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['incidents'] })
+      queryClient.invalidateQueries({ queryKey: ['auditEvents'] })
+      toast.success('KB article unlinked')
+    },
+    onError: (err) => toast.error('Could not unlink KB', { description: readableError(err) }),
+  })
+}
+
+export function useIncidentMarkAwaiting() {
+  const queryClient = useQueryClient()
+  return useMutation<unknown, Error, { id: string; awaiting: boolean }>({
+    mutationFn: async ({ id, awaiting }) =>
+      apiFetch(`/incidents/${id}/mark-awaiting`, {
+        method: 'POST',
+        body: JSON.stringify({ awaiting }),
+      }),
+    onSuccess: (_d, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['incidents'] })
+      queryClient.invalidateQueries({ queryKey: ['auditEvents'] })
+      toast.success(vars.awaiting ? 'Marked awaiting approval' : 'Cleared awaiting state')
+    },
+    onError: (err) => toast.error('Could not update', { description: readableError(err) }),
+  })
+}
+
+export function useIncidentSendDraft() {
+  const queryClient = useQueryClient()
+  return useMutation<unknown, Error, { id: string }>({
+    mutationFn: async ({ id }) =>
+      apiFetch(`/incidents/${id}/draft-response/send`, {
+        method: 'POST',
+        body: JSON.stringify({}),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['incidents'] })
+      queryClient.invalidateQueries({ queryKey: ['auditEvents'] })
+      toast.success('Draft sent as customer reply')
+    },
+    onError: (err) => toast.error('Could not send draft', { description: readableError(err) }),
+  })
+}
+
+export function useIncidentSaveDraft() {
+  const queryClient = useQueryClient()
+  return useMutation<unknown, Error, { id: string; draft: string }>({
+    mutationFn: async ({ id, draft }) =>
+      apiFetch(`/incidents/${id}/draft-response`, {
+        method: 'POST',
+        body: JSON.stringify({ draft }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['incidents'] })
+      queryClient.invalidateQueries({ queryKey: ['auditEvents'] })
+      toast.success('Draft saved')
+    },
+    onError: (err) => toast.error('Could not save draft', { description: readableError(err) }),
   })
 }
 
@@ -335,6 +615,10 @@ export function useTriageChangeAgent() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['changes'] })
       queryClient.invalidateQueries({ queryKey: ['auditEvents'] })
+      toast.success('Change re-triaged')
+    },
+    onError: (err) => {
+      toast.error('Triage failed', { description: readableError(err) })
     },
   })
 }
@@ -354,6 +638,10 @@ export function useTriageIncidentAgent() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['incidents'] })
       queryClient.invalidateQueries({ queryKey: ['auditEvents'] })
+      toast.success('Incident re-triaged')
+    },
+    onError: (err) => {
+      toast.error('Triage failed', { description: readableError(err) })
     },
   })
 }
@@ -373,6 +661,10 @@ export function useReviewAccessRequestAgent() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['accessRequests'] })
       queryClient.invalidateQueries({ queryKey: ['auditEvents'] })
+      toast.success('Access request re-reviewed')
+    },
+    onError: (err) => {
+      toast.error('Review failed', { description: readableError(err) })
     },
   })
 }
@@ -395,6 +687,10 @@ export function useCreatePolicyRule() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['policies'] })
       queryClient.invalidateQueries({ queryKey: ['auditEvents'] })
+      toast.success('Policy rule created')
+    },
+    onError: (err) => {
+      toast.error('Could not create rule', { description: readableError(err) })
     },
   })
 }
@@ -423,6 +719,17 @@ export function useUpdatePolicyRule() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['policies'] })
       queryClient.invalidateQueries({ queryKey: ['auditEvents'] })
+      toast.success('Policy rule updated')
+    },
+    onError: async (err) => {
+      if (err instanceof ApiError && err.status === 412) {
+        await queryClient.refetchQueries({ queryKey: ['policies'], type: 'active' })
+        toast.warning('Rule changed since you loaded it', {
+          description: 'Refreshed — review the new state and try again.',
+        })
+        return
+      }
+      toast.error('Could not save rule', { description: readableError(err) })
     },
   })
 }
@@ -437,9 +744,13 @@ export function useDeletePolicyRule() {
     mutationFn: async ({ id, hard }) => {
       return apiFetch(`/policies/${id}${hard ? '?hard=true' : ''}`, { method: 'DELETE' })
     },
-    onSuccess: () => {
+    onSuccess: (_data, vars) => {
       queryClient.invalidateQueries({ queryKey: ['policies'] })
       queryClient.invalidateQueries({ queryKey: ['auditEvents'] })
+      toast.success(vars.hard ? 'Policy rule deleted' : 'Policy rule disabled')
+    },
+    onError: (err) => {
+      toast.error('Could not remove rule', { description: readableError(err) })
     },
   })
 }

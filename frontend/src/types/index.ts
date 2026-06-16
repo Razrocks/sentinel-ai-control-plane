@@ -65,8 +65,21 @@ export interface Incident {
   recommendedFix: string
   kbArticles: string[]
   isRecurring: boolean
+  awaitingApproval?: boolean
+  draftResponse?: string
+  notes?: IncidentNote[]
   createdAt: string
   updatedAt: string
+}
+
+export interface IncidentNote {
+  id: string
+  actor: string
+  kind: 'work_note' | 'customer_reply'
+  content: string
+  createdAt: string
+  updatedAt: string
+  editedBy?: string
 }
 
 export interface AccessRequest {
@@ -128,6 +141,16 @@ export interface Approval {
   whyYouAreRequired?: string
   /** B5 — optimistic-lock version. Echo back via `If-Match` on the next mutation. */
   version: number
+  notes?: ApprovalNote[]
+}
+
+export interface ApprovalNote {
+  id: string
+  actor: string
+  content: string
+  createdAt: string
+  updatedAt: string
+  editedBy?: string
 }
 
 export interface AuditEvent {

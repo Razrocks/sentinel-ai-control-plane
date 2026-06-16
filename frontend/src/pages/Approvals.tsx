@@ -33,11 +33,14 @@ import {
   useApprovalDecision,
   useApprovalAddNote,
   useApprovalEscalate,
+  useEditApprovalNote,
+  useDeleteApprovalNote,
   ApprovalConflictError,
 } from '@/hooks/useMutations'
 import { ActionGuardModal } from '@/components/shared'
 import { timeAgo, cn } from '@/lib/utils'
 import { useRole } from '@/lib/roles'
+import { useAuth } from '@/lib/auth'
 import type { Approval } from '@/types'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -773,6 +776,14 @@ function PendingApprovalCard({
             )}
           </Block>
         )}
+
+        {/* Notes thread — surfaces ANY note attached by humans during triage
+            (rationale, clarification asks, escalation reasons). Each note is
+            editable + deletable by its author or admin. Agent context loader
+            reads the same list and feeds it into support_approval_decision. */}
+        {(approval.notes?.length ?? 0) > 0 && (
+          <NotesSection approval={approval} />
+        )}
       </CardContent>
 
       <Separator />
@@ -1122,5 +1133,129 @@ function ResolvedRow({ approval }: { approval: Approval }) {
       </div>
       <Badge variant={variant}>{label}</Badge>
     </li>
+  )
+}
+
+// ─── Notes thread ─────────────────────────────────────
+
+/**
+ * Renders the conversation of notes attached to an approval. Each note shows
+ * actor, timestamp, "edited" marker if it was changed, plus inline edit + delete
+ * affordances scoped to the current user (author or admin only).
+ */
+function NotesSection({ approval }: { approval: Approval }) {
+  const notes = approval.notes ?? []
+  const { user } = useAuth()
+  const currentName = user?.name ?? ''
+  const isAdmin = user?.role === 'admin'
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [draft, setDraft] = useState('')
+  const editNote = useEditApprovalNote()
+  const deleteNote = useDeleteApprovalNote()
+
+  return (
+    <div className="border-t pt-5">
+      <div className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
+        Notes · {notes.length}
+      </div>
+      <ul className="flex flex-col gap-3">
+        {notes.map((n) => {
+          const canEdit = isAdmin || n.actor === currentName
+          const isEditing = editingId === n.id
+          return (
+            <li
+              key={n.id}
+              className="rounded-md border border-border bg-card/40 px-3 py-2.5"
+            >
+              <div className="flex items-center justify-between gap-3 mb-1.5">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="text-sm font-medium text-foreground truncate">
+                    {n.actor}
+                  </span>
+                  <span className="text-xs text-muted-foreground flex-shrink-0">
+                    {timeAgo(n.createdAt)}
+                  </span>
+                  {n.editedBy && (
+                    <span
+                      className="text-xs text-muted-foreground/80 italic flex-shrink-0"
+                      title={`Last edited by ${n.editedBy}`}
+                    >
+                      (edited)
+                    </span>
+                  )}
+                </div>
+                {canEdit && !isEditing && (
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <button
+                      onClick={() => {
+                        setEditingId(n.id)
+                        setDraft(n.content)
+                      }}
+                      className="text-xs text-muted-foreground hover:text-foreground transition-colors px-1.5 py-0.5 rounded hover:bg-muted"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (confirm('Delete this note?')) {
+                          deleteNote.mutate({ id: approval.id, noteId: n.id })
+                        }
+                      }}
+                      className="text-xs text-muted-foreground hover:text-destructive transition-colors px-1.5 py-0.5 rounded hover:bg-destructive/10"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                )}
+              </div>
+              {isEditing ? (
+                <div className="flex flex-col gap-2">
+                  <textarea
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    rows={3}
+                    className="w-full rounded-md border border-border bg-background px-3 py-2 text-sm resize-y focus:outline-none focus:ring-2 focus:ring-primary/50"
+                    autoFocus
+                  />
+                  <div className="flex items-center justify-end gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setEditingId(null)
+                        setDraft('')
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      size="sm"
+                      disabled={!draft.trim() || editNote.isPending}
+                      onClick={() => {
+                        editNote.mutate(
+                          { id: approval.id, noteId: n.id, content: draft.trim() },
+                          {
+                            onSuccess: () => {
+                              setEditingId(null)
+                              setDraft('')
+                            },
+                          },
+                        )
+                      }}
+                    >
+                      Save
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-sm text-foreground/90 leading-relaxed whitespace-pre-wrap">
+                  {n.content}
+                </p>
+              )}
+            </li>
+          )
+        })}
+      </ul>
+    </div>
   )
 }

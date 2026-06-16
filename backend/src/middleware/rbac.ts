@@ -33,6 +33,9 @@ const actionRoles: Record<string, Role[]> = {
   escalate: ['operator', 'engineer', 'it_support', 'approver', 'access_approver', 'admin'],
   create_pr: ['engineer', 'admin'],
   edit_policy: ['admin'],
+  // Anyone with triage access can attach a note (operator-up, includes
+  // approvers + access approvers). Notes are audit-trailed regardless.
+  attach_notes: ['operator', 'engineer', 'it_support', 'approver', 'access_approver', 'admin'],
 }
 
 export function requireAction(action: string) {

@@ -38,7 +38,15 @@ export async function triageIncident(opts: {
   incidentDbId: string
   actor?: string
 }): Promise<TriageIncidentResult> {
-  const incident = await prisma.incident.findUnique({ where: { id: opts.incidentDbId } })
+  const incident = await prisma.incident.findUnique({
+    where: { id: opts.incidentDbId },
+    include: {
+      // Operator-attached notes (rationale, customer replies, escalation
+      // reasons) are quoted in the prompt so the model doesn't suggest
+      // remediation that contradicts what the humans already documented.
+      notes: { where: { deletedAt: null }, orderBy: { createdAt: 'asc' } },
+    },
+  })
   if (!incident) throw new Error(`Incident not found: ${opts.incidentDbId}`)
 
   const actor = opts.actor ?? 'system'
@@ -50,6 +58,10 @@ export async function triageIncident(opts: {
     loadIncidentT2Extras(incident.affectedService),
     loadAuditSlice({ objectType: 'incident', objectId: incident.incidentId, limit: 15 }),
   ])
+
+  const humanNotesProse = incident.notes
+    .map((n) => `[${n.createdAt.toISOString()}] ${n.actor} (${n.kind}): ${n.content}`)
+    .join('\n')
 
   const input: TriageIncidentInput = {
     incident: {
@@ -63,6 +75,8 @@ export async function triageIncident(opts: {
       assignmentGroup: incident.assignmentGroup,
       relatedCI: incident.relatedCI,
       isRecurring: incident.isRecurring,
+      humanNotes: humanNotesProse || undefined,
+      draftInProgress: incident.draftResponse ?? undefined,
     },
     recentDeploysOnService: ctx.t2.recentDeploysOnService,
     recentIncidentsOnService: ctx.t2.recentIncidentsOnService,

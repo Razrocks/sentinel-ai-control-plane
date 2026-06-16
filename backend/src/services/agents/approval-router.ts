@@ -230,14 +230,26 @@ export async function routeApproval(opts: {
   }
 
   // ── 2. support_approval_decision ──────────────────────
-  // Reload coApprovals to feed the decision-impact skill (post-SOD set)
+  // Reload coApprovals + notes to feed the decision-impact skill. Notes
+  // carry human rationale (escalation reason, requested clarifications) the
+  // agent needs to acknowledge in its impact prose. Soft-deleted hidden.
   const refreshed = await prisma.approval.findUnique({
     where: { id: approval.id },
-    include: { coApprovals: true },
+    include: {
+      coApprovals: true,
+      notes: { where: { deletedAt: null }, orderBy: { createdAt: 'asc' } },
+    },
   })
   if (!refreshed) {
     throw new Error('Approval disappeared mid-pipeline')
   }
+
+  // Flatten notes into a single prose blob the skill can quote directly. We
+  // keep them ordered chronologically so the model sees the conversation
+  // flow (eg "needs clarification" → response → escalation reason).
+  const humanNotesProse = refreshed.notes
+    .map((n) => `[${n.createdAt.toISOString()}] ${n.actor}: ${n.content}`)
+    .join('\n')
 
   const supportInput: SupportApprovalDecisionInput = {
     approval: {
@@ -255,6 +267,7 @@ export async function routeApproval(opts: {
         name: c.name,
         status: c.status as 'approved' | 'pending' | 'denied',
       })),
+      humanNotes: humanNotesProse || undefined,
     },
     linkedEntity: { type: linkedEntityType, data: linkedEntityData },
     policyContext: {

@@ -14,6 +14,7 @@ export async function incidentsRoutes(app: FastifyInstance) {
 
     const incidents = await prisma.incident.findMany({
       where,
+      include: { notes: { where: { deletedAt: null }, orderBy: { createdAt: 'asc' } } },
       orderBy: { updatedAt: 'desc' },
     })
 
@@ -24,7 +25,10 @@ export async function incidentsRoutes(app: FastifyInstance) {
   app.get('/api/incidents/:id', async (request) => {
     const { id } = request.params as { id: string }
 
-    const incident = await prisma.incident.findUnique({ where: { id } })
+    const incident = await prisma.incident.findUnique({
+      where: { id },
+      include: { notes: { where: { deletedAt: null }, orderBy: { createdAt: 'asc' } } },
+    })
     if (!incident) throw new NotFoundError('Incident', id)
 
     return mapIncident(incident)
@@ -50,6 +54,18 @@ function mapIncident(incident: any) {
     recommendedFix: incident.recommendedFix,
     kbArticles: incident.kbArticles,
     isRecurring: incident.isRecurring,
+    awaitingApproval: incident.awaitingApproval ?? false,
+    draftResponse: incident.draftResponse ?? undefined,
+    notes:
+      incident.notes?.map((n: any) => ({
+        id: n.id,
+        actor: n.actor,
+        kind: n.kind,
+        content: n.content,
+        createdAt: n.createdAt.toISOString(),
+        updatedAt: n.updatedAt.toISOString(),
+        editedBy: n.editedBy ?? undefined,
+      })) ?? [],
     createdAt: incident.createdAt.toISOString(),
     updatedAt: incident.updatedAt.toISOString(),
   }

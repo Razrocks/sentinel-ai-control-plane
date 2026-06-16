@@ -250,12 +250,41 @@ model Incident {
   recommendedFix    String           @map("recommended_fix")
   kbArticles        String[]         @map("kb_articles")
   isRecurring       Boolean          @map("is_recurring")
+  /// Set when an operator marks the incident as awaiting approval (eg a
+  /// remediation requires sign-off). UI surfaces the pending state inline.
+  awaitingApproval  Boolean          @default(false) @map("awaiting_approval")
+  /// Optional rolling draft response text. Operators can iterate on it
+  /// before routing to the customer. Persisted so refresh doesn't lose work.
+  draftResponse     String?          @map("draft_response")
   createdAt         DateTime         @default(now()) @map("created_at")
   updatedAt         DateTime         @updatedAt @map("updated_at")
+
+  notes IncidentNote[]
 
   @@index([severity])
   @@index([status])
   @@map("incidents")
+}
+
+/// Operator/engineer-attached notes during incident triage. Mirrors the
+/// ApprovalNote shape so the same edit/delete RBAC pattern applies.
+model IncidentNote {
+  id         String    @id @default(cuid())
+  incidentId String    @map("incident_id")
+  actor      String
+  /// 'work_note' = internal · 'customer_reply' = customer-facing reply.
+  /// Surface separately in the UI; both audit-trailed.
+  kind       String    @default("work_note")
+  content    String
+  createdAt  DateTime  @default(now()) @map("created_at")
+  updatedAt  DateTime  @default(now()) @updatedAt @map("updated_at")
+  editedBy   String?   @map("edited_by")
+  deletedAt  DateTime? @map("deleted_at")
+
+  incident Incident @relation(fields: [incidentId], references: [id], onDelete: Cascade)
+
+  @@index([incidentId])
+  @@map("incident_notes")
 }
 
 model AccessRequest {
@@ -322,11 +351,14 @@ model Approval {
 /// or record an escalation reason. Always written via API only; UI never
 /// mutates these directly. Audit row written separately.
 model ApprovalNote {
-  id         String   @id @default(cuid())
+  id        String    @id @default(cuid())
   approvalId String   @map("approval_id")
-  actor      String
-  content    String
-  createdAt  DateTime @default(now()) @map("created_at")
+  actor     String
+  content   String
+  createdAt DateTime  @default(now()) @map("created_at")
+  updatedAt DateTime  @default(now()) @updatedAt @map("updated_at")
+  editedBy  String?   @map("edited_by")
+  deletedAt DateTime? @map("deleted_at")
 
   approval Approval @relation(fields: [approvalId], references: [id], onDelete: Cascade)
 

@@ -47,7 +47,7 @@ function makeBuildPrompt<T>(taskInstructions: string, opts?: {
 const assess_change: SkillSpec<S.AssessChangeInput, S.AssessChangeOutput> = {
   name: 'assess_change',
   kind: 'agentic',
-  model: 'claude-sonnet-4-20250514',
+  model: 'claude-sonnet-4-6',
   temperature: 0.1,
   maxInputTokens: 6000,
   maxOutputTokens: 600,
@@ -102,7 +102,7 @@ const analyze_blast_radius: SkillSpec<
 > = {
   name: 'analyze_blast_radius',
   kind: 'agentic',
-  model: 'claude-sonnet-4-20250514',
+  model: 'claude-sonnet-4-6',
   temperature: 0.1,
   maxInputTokens: 7000,
   maxOutputTokens: 1500,
@@ -148,7 +148,7 @@ const analyze_blast_radius: SkillSpec<
 const triage_incident: SkillSpec<S.TriageIncidentInput, S.TriageIncidentOutput> = {
   name: 'triage_incident',
   kind: 'agentic',
-  model: 'claude-sonnet-4-20250514',
+  model: 'claude-sonnet-4-6',
   temperature: 0.1,
   maxInputTokens: 6000,
   maxOutputTokens: 700,
@@ -193,7 +193,7 @@ const evaluate_access_request: SkillSpec<
 > = {
   name: 'evaluate_access_request',
   kind: 'agentic',
-  model: 'claude-sonnet-4-20250514',
+  model: 'claude-sonnet-4-6',
   temperature: 0.1,
   maxInputTokens: 5000,
   maxOutputTokens: 500,
@@ -246,7 +246,7 @@ const support_approval_decision: SkillSpec<
 > = {
   name: 'support_approval_decision',
   kind: 'agentic',
-  model: 'claude-sonnet-4-20250514',
+  model: 'claude-sonnet-4-6',
   temperature: 0.2,
   maxInputTokens: 4000,
   maxOutputTokens: 500,
@@ -296,7 +296,7 @@ const support_approval_decision: SkillSpec<
 const route_request: SkillSpec<S.RouteRequestInput, S.RouteRequestOutput> = {
   name: 'route_request',
   kind: 'agentic',
-  model: 'claude-sonnet-4-20250514',
+  model: 'claude-sonnet-4-6',
   temperature: 0.1,
   maxInputTokens: 6000,
   maxOutputTokens: 800,
@@ -349,7 +349,7 @@ const propose_bounded_remediation: SkillSpec<
 > = {
   name: 'propose_bounded_remediation',
   kind: 'agentic',
-  model: 'claude-sonnet-4-20250514',
+  model: 'claude-sonnet-4-6',
   temperature: 0.2,
   maxInputTokens: 6000,
   maxOutputTokens: 1200,
@@ -429,7 +429,7 @@ const draft_approval_packet: SkillSpec<
 > = {
   name: 'draft_approval_packet',
   kind: 'agentic',
-  model: 'claude-sonnet-4-20250514',
+  model: 'claude-sonnet-4-6',
   temperature: 0.3,
   maxInputTokens: 8000,
   maxOutputTokens: 1500,
@@ -471,7 +471,7 @@ const draft_approval_packet: SkillSpec<
 const draft_work_note: SkillSpec<S.DraftWorkNoteInput, S.DraftWorkNoteOutput> = {
   name: 'draft_work_note',
   kind: 'agentic',
-  model: 'claude-sonnet-4-20250514',
+  model: 'claude-sonnet-4-6',
   temperature: 0.4,
   maxInputTokens: 3500,
   maxOutputTokens: 400,
@@ -512,7 +512,7 @@ const draft_customer_response: SkillSpec<
 > = {
   name: 'draft_customer_response',
   kind: 'agentic',
-  model: 'claude-sonnet-4-20250514',
+  model: 'claude-sonnet-4-6',
   temperature: 0.5,
   maxInputTokens: 3000,
   maxOutputTokens: 600,
@@ -563,7 +563,7 @@ const explain_policy_decision: SkillSpec<
 > = {
   name: 'explain_policy_decision',
   kind: 'agentic',
-  model: 'claude-sonnet-4-20250514',
+  model: 'claude-sonnet-4-6',
   temperature: 0.2,
   maxInputTokens: 4000,
   maxOutputTokens: 400,

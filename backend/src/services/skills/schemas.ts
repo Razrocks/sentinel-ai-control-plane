@@ -157,6 +157,14 @@ export const TriageIncidentInput = z.object({
     assignmentGroup: z.string(),
     relatedCI: z.array(z.string()),
     isRecurring: z.boolean(),
+    /// Chronologically-flattened work notes + customer replies attached by
+    /// humans during triage. Skill quotes them to acknowledge what's been
+    /// tried and avoid re-suggesting steps already documented.
+    humanNotes: z.string().optional(),
+    /// Unsent customer-reply draft the operator is iterating on. Surfaced
+    /// to the agent so re-triage doesn't suggest a customer comms step
+    /// that the human is already mid-drafting.
+    draftInProgress: z.string().optional(),
   }),
   recentDeploysOnService: z
     .array(z.object({ ticketId: z.string(), deployedAt: z.string(), result: z.string() }))
@@ -286,6 +294,10 @@ export const SupportApprovalDecisionInput = z.object({
         status: z.enum(['approved', 'pending', 'denied']),
       }),
     ),
+    /// Chronologically-flattened notes attached by humans during triage
+    /// (rationale, clarification requests, escalation reasons). Skill
+    /// quotes these directly when explaining the decision impact.
+    humanNotes: z.string().optional(),
   }),
   linkedEntity: z.object({
     type: z.string(),

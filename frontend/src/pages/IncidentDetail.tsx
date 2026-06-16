@@ -22,10 +22,30 @@ import {
   Zap,
 } from 'lucide-react'
 import { useIncident } from '@/hooks/useData'
-import { useIncidentUpdateStatus, useTriageIncidentAgent } from '@/hooks/useMutations'
+import {
+  useIncidentUpdateStatus,
+  useTriageIncidentAgent,
+  useIncidentAddNote,
+  useIncidentEscalate,
+  useIncidentRoute,
+  useIncidentLinkKB,
+  useIncidentMarkAwaiting,
+  useIncidentSaveDraft,
+  useIncidentSendDraft,
+  useIncidentEditNote,
+  useIncidentDeleteNote,
+  useIncidentUnlinkKB,
+} from '@/hooks/useMutations'
+import { useAuth } from '@/lib/auth'
+import type { Incident } from '@/types'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
+import { Textarea } from '@/components/ui/textarea'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { ReanalyzeButton } from '@/components/shared'
 import { RiskBadge, SystemChip, ActionGuardModal, ContextualAssistant } from '@/components/shared'
-import { formatDate } from '@/lib/utils'
+import { formatDate, timeAgo } from '@/lib/utils'
 import { useRole } from '@/lib/roles'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -182,11 +202,30 @@ function getRecommendedNextStep(incident: (typeof mockIncidents)[number]) {
 export default function IncidentDetail() {
   const { id } = useParams<{ id: string }>()
   const [guardModal, setGuardModal] = useState<{ open: boolean; title: string; description: string; action?: () => void } | null>(null)
+  // Per-action dialog state. We open these instead of the generic guard
+  // modal when an action needs structured input (note text, escalate
+  // reason, target team, KB id, draft response).
+  const [actionDialog, setActionDialog] = useState<
+    | { kind: 'note' }
+    | { kind: 'customer_reply' }
+    | { kind: 'escalate' }
+    | { kind: 'route' }
+    | { kind: 'link_kb' }
+    | { kind: 'draft' }
+    | null
+  >(null)
+  const [dialogText, setDialogText] = useState('')
   const { role, canAction, getBlockedActions, config } = useRole()
 
   const { data: incident, isLoading } = useIncident(id!)
   const updateStatus = useIncidentUpdateStatus()
   const triageAgent = useTriageIncidentAgent()
+  const addNote = useIncidentAddNote()
+  const escalate = useIncidentEscalate()
+  const routeIncident = useIncidentRoute()
+  const linkKB = useIncidentLinkKB()
+  const markAwaiting = useIncidentMarkAwaiting()
+  const saveDraft = useIncidentSaveDraft()
 
   if (isLoading) {
     return (
@@ -448,6 +487,37 @@ export default function IncidentDetail() {
             </Accordion>
           </Card>
 
+          {/* Linked KB articles — inline editable list. Add via the Link KB
+              Article action button (right rail); unlink inline with X. */}
+          <KBLinksSection
+            incident={incident}
+            onAdd={() => {
+              setDialogText('')
+              setActionDialog({ kind: 'link_kb' })
+            }}
+          />
+
+          {/* Draft customer reply — in-progress text saved server-side so
+              other team members can pick it up. Send promotes it into a
+              real customer_reply note + clears the draft. Agent context
+              also reads incident.draftResponse so re-triage knows. */}
+          {incident.draftResponse && incident.draftResponse.trim() && (
+            <DraftResponseCard
+              incident={incident}
+              onContinueEdit={() => {
+                setDialogText(incident.draftResponse ?? '')
+                setActionDialog({ kind: 'draft' })
+              }}
+            />
+          )}
+
+          {/* Notes thread — work notes + customer replies + escalation reasons.
+              Mirrors the Approvals notes pattern. Agent context loader feeds
+              these into triage_incident skill input as humanNotes prose. */}
+          {(incident.notes?.length ?? 0) > 0 && (
+            <IncidentNotesSection incident={incident} />
+          )}
+
           {/* Similar Incidents / Recurring Pattern */}
           {incident.isRecurring && (
             <div className="bg-card rounded-lg border border-status-pending/30 p-4 space-y-3">
@@ -659,9 +729,16 @@ export default function IncidentDetail() {
                         <button
                           key={a.key}
                           onClick={() => {
-                            const actionFn = (() => {
-                              if (a.key === 'trigger_fix')
-                                return () => {
+                            setDialogText('')
+                            // Each action either opens its own input dialog or
+                            // (for trigger_fix) fires the existing GuardModal
+                            // confirm flow that updates status.
+                            if (a.key === 'trigger_fix') {
+                              setGuardModal({
+                                open: true,
+                                title: a.label,
+                                description: a.desc,
+                                action: () => {
                                   const nextStatus =
                                     incident.status === 'investigating' ? 'identified' : 'monitoring'
                                   updateStatus.mutate({
@@ -669,15 +746,31 @@ export default function IncidentDetail() {
                                     status: nextStatus,
                                   })
                                   setGuardModal(null)
-                                }
-                              return undefined
-                            })()
-                            setGuardModal({
-                              open: true,
-                              title: a.label,
-                              description: a.desc,
-                              action: actionFn,
-                            })
+                                },
+                              })
+                            } else if (a.key === 'work_note') {
+                              setActionDialog({ kind: 'note' })
+                            } else if (a.key === 'draft_response') {
+                              setDialogText(incident.draftResponse ?? '')
+                              setActionDialog({ kind: 'draft' })
+                            } else if (a.key === 'escalate') {
+                              setActionDialog({ kind: 'escalate' })
+                            } else if (a.key === 'route') {
+                              setActionDialog({ kind: 'route' })
+                            } else if (a.key === 'link_kb') {
+                              setActionDialog({ kind: 'link_kb' })
+                            } else if (a.key === 'mark_awaiting') {
+                              markAwaiting.mutate({
+                                id: incident.incidentId,
+                                awaiting: !incident.awaitingApproval,
+                              })
+                            } else {
+                              setGuardModal({
+                                open: true,
+                                title: a.label,
+                                description: a.desc,
+                              })
+                            }
                           }}
                           className={`flex h-11 items-center gap-3 rounded-md px-4 text-sm font-medium transition-colors ${a.style}`}
                         >
@@ -827,6 +920,118 @@ export default function IncidentDetail() {
           variant="info"
         />
       )}
+
+      {/* Action dialogs — one per structured-input action. Reuses a single
+          `dialogText` state since only one is open at a time. */}
+      <Dialog
+        open={actionDialog !== null}
+        onOpenChange={(o) => {
+          if (!o) {
+            setActionDialog(null)
+            setDialogText('')
+          }
+        }}
+      >
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>
+              {actionDialog?.kind === 'note' && 'Add work note'}
+              {actionDialog?.kind === 'customer_reply' && 'Draft customer reply'}
+              {actionDialog?.kind === 'escalate' && 'Escalate incident'}
+              {actionDialog?.kind === 'route' && 'Route to team'}
+              {actionDialog?.kind === 'link_kb' && 'Link KB article'}
+              {actionDialog?.kind === 'draft' && 'Draft response'}
+            </DialogTitle>
+          </DialogHeader>
+
+          <div className="flex flex-col gap-3 py-2">
+            {(actionDialog?.kind === 'note' ||
+              actionDialog?.kind === 'customer_reply' ||
+              actionDialog?.kind === 'escalate' ||
+              actionDialog?.kind === 'draft') && (
+              <>
+                <Label htmlFor="dlg-text">
+                  {actionDialog.kind === 'escalate' ? 'Reason' : 'Content'}
+                </Label>
+                <Textarea
+                  id="dlg-text"
+                  value={dialogText}
+                  onChange={(e) => setDialogText(e.target.value)}
+                  rows={5}
+                  placeholder={
+                    actionDialog.kind === 'note'
+                      ? 'Internal triage note…'
+                      : actionDialog.kind === 'customer_reply'
+                        ? 'Customer-facing reply text…'
+                        : actionDialog.kind === 'escalate'
+                          ? 'Why does this need to escalate?'
+                          : 'Rolling draft response — saved for later iteration.'
+                  }
+                />
+              </>
+            )}
+            {actionDialog?.kind === 'route' && (
+              <>
+                <Label htmlFor="dlg-team">Target team</Label>
+                <Input
+                  id="dlg-team"
+                  value={dialogText}
+                  onChange={(e) => setDialogText(e.target.value)}
+                  placeholder="eg sre-platform"
+                />
+              </>
+            )}
+            {actionDialog?.kind === 'link_kb' && (
+              <>
+                <Label htmlFor="dlg-kb">KB article ID</Label>
+                <Input
+                  id="dlg-kb"
+                  value={dialogText}
+                  onChange={(e) => setDialogText(e.target.value)}
+                  placeholder="eg KB-1234"
+                />
+              </>
+            )}
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="ghost"
+              onClick={() => {
+                setActionDialog(null)
+                setDialogText('')
+              }}
+            >
+              Cancel
+            </Button>
+            <Button
+              disabled={!dialogText.trim()}
+              onClick={() => {
+                const value = dialogText.trim()
+                if (!value || !actionDialog) return
+                const inc = incident.incidentId
+                if (actionDialog.kind === 'note') {
+                  addNote.mutate({ id: inc, content: value, kind: 'work_note' })
+                } else if (actionDialog.kind === 'customer_reply') {
+                  addNote.mutate({ id: inc, content: value, kind: 'customer_reply' })
+                } else if (actionDialog.kind === 'escalate') {
+                  escalate.mutate({ id: inc, reason: value })
+                } else if (actionDialog.kind === 'route') {
+                  routeIncident.mutate({ id: inc, team: value })
+                } else if (actionDialog.kind === 'link_kb') {
+                  linkKB.mutate({ id: inc, kbArticleId: value })
+                } else if (actionDialog.kind === 'draft') {
+                  saveDraft.mutate({ id: inc, draft: value })
+                }
+                setActionDialog(null)
+                setDialogText('')
+              }}
+            >
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
@@ -884,6 +1089,266 @@ function ImpactRow({
       <div className="flex flex-col gap-1 min-w-0">
         <div className={cn('text-xs font-semibold uppercase tracking-wider', tone)}>{label}</div>
         <p className="text-sm leading-relaxed text-foreground/85">{text}</p>
+      </div>
+    </div>
+  )
+}
+
+// ─── Notes thread ─────────────────────────────────────
+
+/**
+ * Renders the work-note + customer-reply thread attached to an incident.
+ * Mirrors Approvals NotesSection: actor + timeAgo header, "(edited)" marker,
+ * inline edit/delete scoped to author or admin. Kind tag distinguishes
+ * internal work notes from customer-facing replies.
+ */
+function IncidentNotesSection({ incident }: { incident: Incident }) {
+  const notes = incident.notes ?? []
+  const { user } = useAuth()
+  const currentName = user?.name ?? ''
+  const isAdmin = user?.role === 'admin'
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [draft, setDraft] = useState('')
+  const editNote = useIncidentEditNote()
+  const deleteNote = useIncidentDeleteNote()
+
+  return (
+    <div className="rounded-xl border bg-card text-card-foreground shadow-sm overflow-hidden">
+      <div className="px-5 py-4 border-b border-border/60 flex items-center justify-between">
+        <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
+          <MessageSquare className="h-4 w-4 text-muted-foreground" />
+          Notes &middot; {notes.length}
+        </h3>
+      </div>
+      <ul className="flex flex-col gap-3 px-5 py-4">
+        {notes.map((n) => {
+          const canEdit = isAdmin || n.actor === currentName
+          const isEditing = editingId === n.id
+          const kindLabel = n.kind === 'customer_reply' ? 'Customer reply' : 'Work note'
+          const kindClass =
+            n.kind === 'customer_reply'
+              ? 'bg-primary/10 text-primary'
+              : 'bg-muted text-foreground/85'
+          return (
+            <li
+              key={n.id}
+              className="rounded-md border border-border bg-card/40 px-3 py-2.5"
+            >
+              <div className="flex items-center justify-between gap-3 mb-1.5">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span
+                    className={`text-xs font-semibold uppercase tracking-wider rounded px-1.5 py-0.5 flex-shrink-0 ${kindClass}`}
+                  >
+                    {kindLabel}
+                  </span>
+                  <span className="text-sm font-medium text-foreground truncate">
+                    {n.actor}
+                  </span>
+                  <span className="text-xs text-muted-foreground flex-shrink-0">
+                    {timeAgo(n.createdAt)}
+                  </span>
+                  {n.editedBy && (
+                    <span
+                      className="text-xs text-muted-foreground/80 italic flex-shrink-0"
+                      title={`Last edited by ${n.editedBy}`}
+                    >
+                      (edited)
+                    </span>
+                  )}
+                </div>
+                {canEdit && !isEditing && (
+                  <div className="flex items-center gap-1 flex-shrink-0">
+                    <button
+                      onClick={() => {
+                        setEditingId(n.id)
+                        setDraft(n.content)
+                      }}
+                      className="text-xs text-muted-foreground hover:text-foreground transition-colors px-1.5 py-0.5 rounded hover:bg-muted"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (confirm('Delete this note?')) {
+                          deleteNote.mutate({ id: incident.incidentId, noteId: n.id })
+                        }
+                      }}
+                      className="text-xs text-muted-foreground hover:text-destructive transition-colors px-1.5 py-0.5 rounded hover:bg-destructive/10"
+                    >
+                      Delete
+                    </button>
+                  </div>
+                )}
+              </div>
+              {isEditing ? (
+                <div className="flex flex-col gap-2">
+                  <Textarea
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    rows={3}
+                    autoFocus
+                  />
+                  <div className="flex items-center justify-end gap-2">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setEditingId(null)
+                        setDraft('')
+                      }}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      size="sm"
+                      disabled={!draft.trim() || editNote.isPending}
+                      onClick={() => {
+                        editNote.mutate(
+                          {
+                            id: incident.incidentId,
+                            noteId: n.id,
+                            content: draft.trim(),
+                          },
+                          {
+                            onSuccess: () => {
+                              setEditingId(null)
+                              setDraft('')
+                            },
+                          },
+                        )
+                      }}
+                    >
+                      Save
+                    </Button>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-sm text-foreground/90 leading-relaxed whitespace-pre-wrap">
+                  {n.content}
+                </p>
+              )}
+            </li>
+          )
+        })}
+      </ul>
+    </div>
+  )
+}
+
+// ─── Draft response card ─────────────────────────────
+
+/**
+ * Surfaces an in-progress customer reply draft inline on the incident page
+ * so any team member can see "X is mid-drafting a reply" without opening
+ * the dialog. Send promotes the text into a real customer_reply note.
+ */
+function DraftResponseCard({
+  incident,
+  onContinueEdit,
+}: {
+  incident: Incident
+  onContinueEdit: () => void
+}) {
+  const sendDraft = useIncidentSendDraft()
+  const draft = incident.draftResponse ?? ''
+  return (
+    <div className="rounded-xl border border-primary/30 bg-primary/5 text-card-foreground shadow-sm overflow-hidden">
+      <div className="px-5 py-3.5 border-b border-primary/20 flex items-center justify-between gap-3">
+        <div className="flex items-center gap-2">
+          <FileText className="h-4 w-4 text-primary" />
+          <span className="text-base font-semibold text-foreground">
+            Draft customer reply
+          </span>
+          <span className="text-xs font-medium uppercase tracking-wider rounded px-1.5 py-0.5 bg-primary/15 text-primary">
+            In progress
+          </span>
+        </div>
+        <span className="text-xs text-muted-foreground">
+          Last edited {timeAgo(incident.updatedAt)}
+        </span>
+      </div>
+      <div className="px-5 py-4 flex flex-col gap-4">
+        <p className="text-sm text-foreground/90 leading-relaxed whitespace-pre-wrap rounded-md bg-card/60 border border-border px-3 py-2.5">
+          {draft}
+        </p>
+        <div className="flex items-center justify-end gap-2">
+          <Button variant="ghost" size="sm" onClick={onContinueEdit}>
+            Continue editing
+          </Button>
+          <Button
+            size="sm"
+            disabled={sendDraft.isPending}
+            onClick={() => {
+              if (confirm('Send this draft as the customer reply? Clears the draft.')) {
+                sendDraft.mutate({ id: incident.incidentId })
+              }
+            }}
+          >
+            Send as customer reply
+          </Button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── KB links section ─────────────────────────────────
+
+/**
+ * Inline list of linked KB articles. Each pill has an X to unlink. Empty
+ * state shows a + Add affordance that triggers the existing Link KB Article
+ * action dialog (handled in parent IncidentDetail state).
+ */
+function KBLinksSection({
+  incident,
+  onAdd,
+}: {
+  incident: Incident
+  onAdd: () => void
+}) {
+  const unlink = useIncidentUnlinkKB()
+  const articles = incident.kbArticles ?? []
+  return (
+    <div className="rounded-xl border bg-card text-card-foreground shadow-sm overflow-hidden">
+      <div className="px-5 py-3.5 border-b border-border/60 flex items-center justify-between">
+        <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
+          <BookOpen className="h-4 w-4 text-muted-foreground" />
+          KB articles &middot; {articles.length}
+        </h3>
+        <Button variant="ghost" size="sm" onClick={onAdd}>
+          + Link article
+        </Button>
+      </div>
+      <div className="px-5 py-4">
+        {articles.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No KB articles linked yet. Use <span className="font-medium text-foreground">Link KB Article</span> to attach one — agent context loader feeds linked articles into triage prompts.
+          </p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {articles.map((kb) => (
+              <span
+                key={kb}
+                className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted px-3 py-1.5 text-sm font-mono text-foreground/85"
+              >
+                <BookOpen className="h-3.5 w-3.5 text-primary" />
+                {kb}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (confirm(`Unlink ${kb} from this incident?`)) {
+                      unlink.mutate({ id: incident.incidentId, kbArticleId: kb })
+                    }
+                  }}
+                  className="ml-1 text-muted-foreground hover:text-destructive transition-colors"
+                  aria-label={`Unlink ${kb}`}
+                >
+                  ×
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )

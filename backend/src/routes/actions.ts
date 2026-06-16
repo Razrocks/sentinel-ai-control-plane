@@ -205,6 +205,121 @@ export async function actionsRoutes(app: FastifyInstance) {
   })
 
   /**
+   * PATCH /api/approvals/:id/note/:noteId
+   *
+   * Edit an existing note. Only original author OR admin may edit. We track
+   * `editedBy` + updatedAt so the audit trail reflects who touched it last.
+   * RBAC reuses `attach_notes` (same role gate as creation).
+   * Body: { content: string }
+   */
+  app.patch('/api/approvals/:id/note/:noteId', {
+    preHandler: [requireAuth],
+  }, async (request, reply) => {
+    const { id, noteId } = request.params as { id: string; noteId: string }
+    const { content } = request.body as { content?: string }
+
+    if (!content || !content.trim()) {
+      throw new ValidationError('Note content is required.')
+    }
+
+    const rbac = requireAction('attach_notes' as any)
+    await rbac(request, reply)
+
+    const existing = await prisma.approvalNote.findFirst({
+      where: { id: noteId, approvalId: id, deletedAt: null },
+    })
+    if (!existing) {
+      throw new ValidationError(`Note not found: ${noteId}`)
+    }
+
+    const isAuthor = existing.actor === request.user!.name
+    const isAdmin = request.user!.role === 'admin'
+    if (!isAuthor && !isAdmin) {
+      throw new ValidationError('Only the original author or an admin may edit a note.')
+    }
+
+    const updated = await prisma.approvalNote.update({
+      where: { id: noteId },
+      data: {
+        content: content.trim(),
+        editedBy: request.user!.name,
+      },
+    })
+
+    await prisma.auditEvent.create({
+      data: {
+        actor: request.user!.name,
+        action: 'note_edited',
+        objectType: 'approval',
+        objectId: id,
+        objectTitle: `note ${noteId}`,
+        result: 'success',
+        details: content.trim().slice(0, 200),
+      },
+    })
+
+    return reply.send({
+      note: {
+        id: updated.id,
+        approvalId: updated.approvalId,
+        actor: updated.actor,
+        content: updated.content,
+        createdAt: updated.createdAt.toISOString(),
+        updatedAt: updated.updatedAt.toISOString(),
+        editedBy: updated.editedBy,
+      },
+    })
+  })
+
+  /**
+   * DELETE /api/approvals/:id/note/:noteId
+   *
+   * Soft-delete a note. Same RBAC as edit: author or admin. Soft delete
+   * (sets deletedAt) preserves audit trail — the note row stays in DB but
+   * is excluded from API responses + agent context loaders.
+   */
+  app.delete('/api/approvals/:id/note/:noteId', {
+    preHandler: [requireAuth],
+  }, async (request, reply) => {
+    const { id, noteId } = request.params as { id: string; noteId: string }
+
+    const rbac = requireAction('attach_notes' as any)
+    await rbac(request, reply)
+
+    const existing = await prisma.approvalNote.findFirst({
+      where: { id: noteId, approvalId: id, deletedAt: null },
+    })
+    if (!existing) {
+      throw new ValidationError(`Note not found: ${noteId}`)
+    }
+
+    const isAuthor = existing.actor === request.user!.name
+    const isAdmin = request.user!.role === 'admin'
+    if (!isAuthor && !isAdmin) {
+      throw new ValidationError('Only the original author or an admin may delete a note.')
+    }
+
+    await prisma.approvalNote.update({
+      where: { id: noteId },
+      data: { deletedAt: new Date() },
+    })
+
+    await prisma.auditEvent.create({
+      data: {
+        actor: request.user!.name,
+        action: 'note_deleted',
+        objectType: 'approval',
+        objectId: id,
+        objectTitle: `note ${noteId}`,
+        result: 'success',
+        details: existing.content.slice(0, 200),
+      },
+    })
+
+    return reply.send({ ok: true })
+  })
+
+  /**
    * POST /api/approvals/:id/escalate
    *
    * Mark an approval as escalated. Bumps version, writes audit event with the
@@ -688,5 +803,373 @@ export async function actionsRoutes(app: FastifyInstance) {
       createdAt: updated.createdAt.toISOString(),
       updatedAt: updated.updatedAt.toISOString(),
     })
+  })
+
+  // ═══════════════════════════════════════════════════════
+  // INCIDENT — NOTE / ESCALATE / ROUTE / LINK-KB / DRAFT / AWAITING
+  // ═══════════════════════════════════════════════════════
+
+  /**
+   * POST /api/incidents/:id/note
+   * Body: { content: string, kind?: 'work_note' | 'customer_reply' }
+   *
+   * Mirrors approval-note semantics: any role with `attach_notes` can attach;
+   * audit row written; soft-deletes preserved by route handlers below.
+   */
+  app.post('/api/incidents/:id/note', { preHandler: [requireAuth] }, async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const { content, kind } = request.body as { content?: string; kind?: string }
+    if (!content || !content.trim()) {
+      throw new ValidationError('Note content is required.')
+    }
+    const rbac = requireAction('attach_notes' as any)
+    await rbac(request, reply)
+
+    const incident = await prisma.incident.findFirst({
+      where: { OR: [{ id }, { incidentId: id }] },
+    })
+    if (!incident) throw new NotFoundError('Incident', id)
+
+    const noteKind = kind === 'customer_reply' ? 'customer_reply' : 'work_note'
+    const note = await prisma.incidentNote.create({
+      data: {
+        incidentId: incident.id,
+        actor: request.user!.name,
+        content: content.trim(),
+        kind: noteKind,
+      },
+    })
+    await prisma.auditEvent.create({
+      data: {
+        actor: request.user!.name,
+        action: noteKind === 'customer_reply' ? 'customer_reply_drafted' : 'work_note_attached',
+        objectType: 'incident',
+        objectId: incident.id,
+        objectTitle: incident.title,
+        result: 'success',
+        details: content.trim().slice(0, 200),
+      },
+    })
+    return reply.send({
+      note: {
+        id: note.id,
+        incidentId: note.incidentId,
+        actor: note.actor,
+        kind: note.kind,
+        content: note.content,
+        createdAt: note.createdAt.toISOString(),
+      },
+    })
+  })
+
+  app.patch('/api/incidents/:id/note/:noteId', { preHandler: [requireAuth] }, async (request, reply) => {
+    const { id, noteId } = request.params as { id: string; noteId: string }
+    const { content } = request.body as { content?: string }
+    if (!content || !content.trim()) throw new ValidationError('Note content is required.')
+    const rbac = requireAction('attach_notes' as any)
+    await rbac(request, reply)
+    const incident = await prisma.incident.findFirst({ where: { OR: [{ id }, { incidentId: id }] } })
+    if (!incident) throw new NotFoundError('Incident', id)
+
+    const existing = await prisma.incidentNote.findFirst({
+      where: { id: noteId, incidentId: incident.id, deletedAt: null },
+    })
+    if (!existing) throw new ValidationError(`Note not found: ${noteId}`)
+    const isAuthor = existing.actor === request.user!.name
+    const isAdmin = request.user!.role === 'admin'
+    if (!isAuthor && !isAdmin) {
+      throw new ValidationError('Only the original author or an admin may edit a note.')
+    }
+    const updated = await prisma.incidentNote.update({
+      where: { id: noteId },
+      data: { content: content.trim(), editedBy: request.user!.name },
+    })
+    await prisma.auditEvent.create({
+      data: {
+        actor: request.user!.name,
+        action: 'work_note_edited',
+        objectType: 'incident',
+        objectId: incident.id,
+        objectTitle: `note ${noteId}`,
+        result: 'success',
+        details: content.trim().slice(0, 200),
+      },
+    })
+    return reply.send({ note: { id: updated.id, content: updated.content, updatedAt: updated.updatedAt.toISOString(), editedBy: updated.editedBy } })
+  })
+
+  app.delete('/api/incidents/:id/note/:noteId', { preHandler: [requireAuth] }, async (request, reply) => {
+    const { id, noteId } = request.params as { id: string; noteId: string }
+    const rbac = requireAction('attach_notes' as any)
+    await rbac(request, reply)
+    const incident = await prisma.incident.findFirst({ where: { OR: [{ id }, { incidentId: id }] } })
+    if (!incident) throw new NotFoundError('Incident', id)
+
+    const existing = await prisma.incidentNote.findFirst({
+      where: { id: noteId, incidentId: incident.id, deletedAt: null },
+    })
+    if (!existing) throw new ValidationError(`Note not found: ${noteId}`)
+    const isAuthor = existing.actor === request.user!.name
+    const isAdmin = request.user!.role === 'admin'
+    if (!isAuthor && !isAdmin) {
+      throw new ValidationError('Only the original author or an admin may delete a note.')
+    }
+    await prisma.incidentNote.update({ where: { id: noteId }, data: { deletedAt: new Date() } })
+    await prisma.auditEvent.create({
+      data: {
+        actor: request.user!.name,
+        action: 'work_note_deleted',
+        objectType: 'incident',
+        objectId: incident.id,
+        objectTitle: `note ${noteId}`,
+        result: 'success',
+        details: existing.content.slice(0, 200),
+      },
+    })
+    return reply.send({ ok: true })
+  })
+
+  /**
+   * POST /api/incidents/:id/escalate
+   * Body: { reason: string }
+   * Bumps severity one notch (sev3→sev2, sev2→sev1) capped at sev1; writes audit.
+   */
+  app.post('/api/incidents/:id/escalate', { preHandler: [requireAuth] }, async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const { reason } = request.body as { reason?: string }
+    if (!reason || !reason.trim()) throw new ValidationError('Escalation reason is required.')
+    const rbac = requireAction('escalate')
+    await rbac(request, reply)
+    const incident = await prisma.incident.findFirst({ where: { OR: [{ id }, { incidentId: id }] } })
+    if (!incident) throw new NotFoundError('Incident', id)
+
+    const escalateMap: Record<string, string> = { sev4: 'sev3', sev3: 'sev2', sev2: 'sev1', sev1: 'sev1' }
+    const newSeverity = escalateMap[incident.severity] ?? incident.severity
+    const updated = await prisma.incident.update({
+      where: { id: incident.id },
+      data: { severity: newSeverity as any },
+    })
+    await prisma.incidentNote.create({
+      data: {
+        incidentId: incident.id,
+        actor: request.user!.name,
+        kind: 'work_note',
+        content: `[ESCALATED ${incident.severity} → ${newSeverity}] ${reason.trim()}`,
+      },
+    })
+    await prisma.auditEvent.create({
+      data: {
+        actor: request.user!.name,
+        action: 'incident_escalated',
+        objectType: 'incident',
+        objectId: incident.id,
+        objectTitle: incident.title,
+        result: 'escalated',
+        details: `severity ${incident.severity} → ${newSeverity}: ${reason.trim().slice(0, 200)}`,
+      },
+    })
+    return reply.send({ ok: true, severity: updated.severity })
+  })
+
+  /**
+   * POST /api/incidents/:id/route
+   * Body: { team: string }
+   * Re-assigns the incident to a different team. Audit-trailed.
+   */
+  app.post('/api/incidents/:id/route', { preHandler: [requireAuth] }, async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const { team } = request.body as { team?: string }
+    if (!team || !team.trim()) throw new ValidationError('Target team is required.')
+    const rbac = requireAction('attach_notes' as any)
+    await rbac(request, reply)
+    const incident = await prisma.incident.findFirst({ where: { OR: [{ id }, { incidentId: id }] } })
+    if (!incident) throw new NotFoundError('Incident', id)
+    const previous = incident.assignmentGroup
+    await prisma.incident.update({ where: { id: incident.id }, data: { assignmentGroup: team.trim() } })
+    await prisma.auditEvent.create({
+      data: {
+        actor: request.user!.name,
+        action: 'incident_routed',
+        objectType: 'incident',
+        objectId: incident.id,
+        objectTitle: incident.title,
+        result: 'success',
+        details: `${previous} → ${team.trim()}`,
+      },
+    })
+    return reply.send({ ok: true, assignmentGroup: team.trim(), previousAssignmentGroup: previous })
+  })
+
+  /**
+   * POST /api/incidents/:id/link-kb
+   * Body: { kbArticleId: string }
+   * Append to kbArticles[] (deduped). Audit-trailed.
+   */
+  app.post('/api/incidents/:id/link-kb', { preHandler: [requireAuth] }, async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const { kbArticleId } = request.body as { kbArticleId?: string }
+    if (!kbArticleId || !kbArticleId.trim()) throw new ValidationError('KB article ID is required.')
+    const rbac = requireAction('attach_notes' as any)
+    await rbac(request, reply)
+    const incident = await prisma.incident.findFirst({ where: { OR: [{ id }, { incidentId: id }] } })
+    if (!incident) throw new NotFoundError('Incident', id)
+    const trimmed = kbArticleId.trim()
+    if (incident.kbArticles.includes(trimmed)) {
+      return reply.send({ ok: true, kbArticles: incident.kbArticles })
+    }
+    const updated = await prisma.incident.update({
+      where: { id: incident.id },
+      data: { kbArticles: [...incident.kbArticles, trimmed] },
+    })
+    await prisma.auditEvent.create({
+      data: {
+        actor: request.user!.name,
+        action: 'kb_article_linked',
+        objectType: 'incident',
+        objectId: incident.id,
+        objectTitle: incident.title,
+        result: 'success',
+        details: trimmed,
+      },
+    })
+    return reply.send({ ok: true, kbArticles: updated.kbArticles })
+  })
+
+  /**
+   * POST /api/incidents/:id/draft-response
+   * Body: { draft: string }
+   * Save a rolling draft response. Stored on incident.draftResponse so the
+   * UI can preserve work across refreshes / role swaps.
+   */
+  app.post('/api/incidents/:id/draft-response', { preHandler: [requireAuth] }, async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const { draft } = request.body as { draft?: string }
+    if (typeof draft !== 'string') throw new ValidationError('Draft text required.')
+    const rbac = requireAction('attach_notes' as any)
+    await rbac(request, reply)
+    const incident = await prisma.incident.findFirst({ where: { OR: [{ id }, { incidentId: id }] } })
+    if (!incident) throw new NotFoundError('Incident', id)
+    await prisma.incident.update({
+      where: { id: incident.id },
+      data: { draftResponse: draft },
+    })
+    await prisma.auditEvent.create({
+      data: {
+        actor: request.user!.name,
+        action: 'draft_response_saved',
+        objectType: 'incident',
+        objectId: incident.id,
+        objectTitle: incident.title,
+        result: 'success',
+        details: draft.slice(0, 200),
+      },
+    })
+    return reply.send({ ok: true })
+  })
+
+  /**
+   * POST /api/incidents/:id/unlink-kb
+   * Body: { kbArticleId: string }
+   * Remove a single KB article from kbArticles[]. Audit-trailed.
+   */
+  app.post('/api/incidents/:id/unlink-kb', { preHandler: [requireAuth] }, async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const { kbArticleId } = request.body as { kbArticleId?: string }
+    if (!kbArticleId || !kbArticleId.trim()) throw new ValidationError('KB article ID is required.')
+    const rbac = requireAction('attach_notes' as any)
+    await rbac(request, reply)
+    const incident = await prisma.incident.findFirst({ where: { OR: [{ id }, { incidentId: id }] } })
+    if (!incident) throw new NotFoundError('Incident', id)
+    const trimmed = kbArticleId.trim()
+    if (!incident.kbArticles.includes(trimmed)) {
+      return reply.send({ ok: true, kbArticles: incident.kbArticles })
+    }
+    const updated = await prisma.incident.update({
+      where: { id: incident.id },
+      data: { kbArticles: incident.kbArticles.filter((k) => k !== trimmed) },
+    })
+    await prisma.auditEvent.create({
+      data: {
+        actor: request.user!.name,
+        action: 'kb_article_unlinked',
+        objectType: 'incident',
+        objectId: incident.id,
+        objectTitle: incident.title,
+        result: 'success',
+        details: trimmed,
+      },
+    })
+    return reply.send({ ok: true, kbArticles: updated.kbArticles })
+  })
+
+  /**
+   * POST /api/incidents/:id/draft-response/send
+   *
+   * Promote the saved draftResponse into a real customer_reply note + clear
+   * the draft. Atomic: either both writes succeed or neither runs.
+   */
+  app.post('/api/incidents/:id/draft-response/send', { preHandler: [requireAuth] }, async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const rbac = requireAction('attach_notes' as any)
+    await rbac(request, reply)
+    const incident = await prisma.incident.findFirst({ where: { OR: [{ id }, { incidentId: id }] } })
+    if (!incident) throw new NotFoundError('Incident', id)
+    const draft = (incident.draftResponse ?? '').trim()
+    if (!draft) throw new ValidationError('No draft to send.')
+
+    const note = await prisma.$transaction(async (tx) => {
+      const created = await tx.incidentNote.create({
+        data: {
+          incidentId: incident.id,
+          actor: request.user!.name,
+          kind: 'customer_reply',
+          content: draft,
+        },
+      })
+      await tx.incident.update({
+        where: { id: incident.id },
+        data: { draftResponse: null },
+      })
+      return created
+    })
+    await prisma.auditEvent.create({
+      data: {
+        actor: request.user!.name,
+        action: 'customer_reply_sent',
+        objectType: 'incident',
+        objectId: incident.id,
+        objectTitle: incident.title,
+        result: 'success',
+        details: draft.slice(0, 200),
+      },
+    })
+    return reply.send({ ok: true, noteId: note.id })
+  })
+
+  /**
+   * POST /api/incidents/:id/mark-awaiting
+   * Toggle the `awaitingApproval` flag. Audit-trailed.
+   */
+  app.post('/api/incidents/:id/mark-awaiting', { preHandler: [requireAuth] }, async (request, reply) => {
+    const { id } = request.params as { id: string }
+    const { awaiting } = request.body as { awaiting?: boolean }
+    const next = awaiting !== false
+    const rbac = requireAction('attach_notes' as any)
+    await rbac(request, reply)
+    const incident = await prisma.incident.findFirst({ where: { OR: [{ id }, { incidentId: id }] } })
+    if (!incident) throw new NotFoundError('Incident', id)
+    await prisma.incident.update({ where: { id: incident.id }, data: { awaitingApproval: next } })
+    await prisma.auditEvent.create({
+      data: {
+        actor: request.user!.name,
+        action: next ? 'incident_marked_awaiting' : 'incident_awaiting_cleared',
+        objectType: 'incident',
+        objectId: incident.id,
+        objectTitle: incident.title,
+        result: 'success',
+        details: next ? 'awaiting approval' : 'no longer awaiting',
+      },
+    })
+    return reply.send({ ok: true, awaitingApproval: next })
   })
 }

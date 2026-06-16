@@ -17,6 +17,10 @@ export async function approvalsRoutes(app: FastifyInstance) {
       include: {
         coApprovals: true,
         decisionImpact: true,
+        // Surface notes inline. Approver UI renders them under the body;
+        // agent context loader also reads them to inject human rationale
+        // into routing/decision-impact prompts. Soft-deleted notes hidden.
+        notes: { where: { deletedAt: null }, orderBy: { createdAt: 'asc' } },
       },
       orderBy: { createdAt: 'desc' },
     })
@@ -33,6 +37,7 @@ export async function approvalsRoutes(app: FastifyInstance) {
       include: {
         coApprovals: true,
         decisionImpact: true,
+        notes: { where: { deletedAt: null }, orderBy: { createdAt: 'asc' } },
       },
     })
 
@@ -72,5 +77,14 @@ function mapApproval(approval: any) {
           escalate: approval.decisionImpact.escalate,
         }
       : undefined,
+    notes:
+      approval.notes?.map((n: any) => ({
+        id: n.id,
+        actor: n.actor,
+        content: n.content,
+        createdAt: n.createdAt.toISOString(),
+        updatedAt: n.updatedAt.toISOString(),
+        editedBy: n.editedBy ?? undefined,
+      })) ?? [],
   }
 }

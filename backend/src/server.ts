@@ -3,6 +3,7 @@ import cors from '@fastify/cors'
 import { config } from './config.js'
 import { prisma } from './lib/prisma.js'
 import { AppError } from './lib/errors.js'
+import { captureException } from './lib/self-monitor.js'
 import { changesRoutes } from './routes/changes.js'
 import { incidentsRoutes } from './routes/incidents.js'
 import { accessRequestsRoutes } from './routes/access-requests.js'
@@ -85,7 +86,7 @@ await app.register(cors, {
 // All error messages run through scrubSecrets before reaching the client OR logs.
 // Anthropic SDK and other libs sometimes embed credentials in error messages —
 // we never want those to escape this boundary.
-app.setErrorHandler((error, _request, reply) => {
+app.setErrorHandler((error, request, reply) => {
   if (error instanceof AppError) {
     return reply.status(error.statusCode).send({
       error: error.code,
@@ -96,6 +97,14 @@ app.setErrorHandler((error, _request, reply) => {
   // Log a scrubbed copy; never log the raw error object that may contain secrets
   const err = error as Error
   app.log.error({ msg: scrubSecrets(err.message ?? String(error)), name: err.name })
+
+  // Phase 5.5: forward unexpected 5xx errors to self-monitoring. No-op
+  // when SENTRY_DSN isn't configured — see lib/self-monitor.ts.
+  captureException(err, {
+    route: request.url,
+    method: request.method,
+    userId: request.user?.userId,
+  })
 
   return reply.status(500).send({
     error: 'INTERNAL_SERVER_ERROR',

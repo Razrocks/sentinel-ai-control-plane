@@ -338,7 +338,7 @@ export default function AccessRequestDetail() {
       </div>
 
       {/* 3-column grid */}
-      <div className="grid grid-cols-[280px_1fr_280px] gap-5">
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[280px_1fr_280px]">
         {/* ---- LEFT: Request context ---- */}
         <div>
           <div className="bg-card rounded-lg border border-border p-4 space-y-4">
@@ -703,12 +703,12 @@ export default function AccessRequestDetail() {
                       const actionFn = (() => {
                         if (a.key === 'approve') return () => {
                           const approverRole = role === 'access_approver' ? 'owner' : (request.managerApproval === 'pending' ? 'manager' : 'owner')
-                          accessDecide.mutate({ id: request.requestId, decision: 'approved', role: approverRole })
+                          accessDecide.mutate({ id: request.requestId, decision: 'approved', role: approverRole, expectedVersion: request.version })
                           setGuardModal(null)
                         }
                         if (a.key === 'deny') return () => {
                           const approverRole = role === 'access_approver' ? 'owner' : (request.managerApproval === 'pending' ? 'manager' : 'owner')
-                          accessDecide.mutate({ id: request.requestId, decision: 'denied', role: approverRole })
+                          accessDecide.mutate({ id: request.requestId, decision: 'denied', role: approverRole, expectedVersion: request.version })
                           setGuardModal(null)
                         }
                         return () => setGuardModal(null)

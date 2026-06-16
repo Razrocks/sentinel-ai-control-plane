@@ -288,7 +288,10 @@ const support_approval_decision: SkillSpec<
     ].join('\n'),
     {
       servicesFilter: (input) => [input.approval.impactedSystem],
-      excludeRole: true,
+      // T1.c (role constraints) IS included so the model knows what the
+      // approver can do — eg the "If approved / If denied / If escalated"
+      // prose should reference the specific actions this role is
+      // authorized to perform, not generic options.
     },
   ),
 }
@@ -352,7 +355,11 @@ const propose_bounded_remediation: SkillSpec<
   model: 'claude-sonnet-4-6',
   temperature: 0.2,
   maxInputTokens: 6000,
-  maxOutputTokens: 1200,
+  // Each option carries ~10 fields (label, description, blast radius array,
+  // rollback plan, maintenance window). 2-3 options + rationale + warnings
+  // easily blow past 1.2k tokens. Bumped to 4k after JSON truncation in
+  // smoke tests.
+  maxOutputTokens: 4000,
   inputSchema: S.ProposeBoundedRemediationInput,
   outputSchema: S.ProposeBoundedRemediationOutput,
   auditAction: 'remediation_proposed',

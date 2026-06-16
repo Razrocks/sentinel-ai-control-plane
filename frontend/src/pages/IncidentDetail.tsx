@@ -35,6 +35,7 @@ import {
   useIncidentEditNote,
   useIncidentDeleteNote,
   useIncidentUnlinkKB,
+  useProposeRemediation,
 } from '@/hooks/useMutations'
 import { useAuth } from '@/lib/auth'
 import type { Incident } from '@/types'
@@ -487,6 +488,11 @@ export default function IncidentDetail() {
             </Accordion>
           </Card>
 
+          {/* A6 — multi-option remediation proposal. Renders the picker if
+              already generated; offers a button to generate otherwise.
+              Each option highlights the recommended one + trade-offs. */}
+          <RemediationOptionsSection incident={incident} />
+
           {/* Linked KB articles — inline editable list. Add via the Link KB
               Article action button (right rail); unlink inline with X. */}
           <KBLinksSection
@@ -744,6 +750,7 @@ export default function IncidentDetail() {
                                   updateStatus.mutate({
                                     id: incident.incidentId,
                                     status: nextStatus,
+                                    expectedVersion: incident.version,
                                   })
                                   setGuardModal(null)
                                 },
@@ -1015,7 +1022,7 @@ export default function IncidentDetail() {
                 } else if (actionDialog.kind === 'customer_reply') {
                   addNote.mutate({ id: inc, content: value, kind: 'customer_reply' })
                 } else if (actionDialog.kind === 'escalate') {
-                  escalate.mutate({ id: inc, reason: value })
+                  escalate.mutate({ id: inc, reason: value, expectedVersion: incident.version })
                 } else if (actionDialog.kind === 'route') {
                   routeIncident.mutate({ id: inc, team: value })
                 } else if (actionDialog.kind === 'link_kb') {
@@ -1347,6 +1354,171 @@ function KBLinksSection({
                 </button>
               </span>
             ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ─── Remediation options (A6) ─────────────────────────
+
+/**
+ * Multi-option remediation picker. Shows 2-3 options from the
+ * `propose_bounded_remediation` skill side-by-side; recommended is
+ * tinted primary. Renders an empty state with a trigger button when
+ * `proposedRemediations` is null. The picker is read-only for now —
+ * acting on a choice goes through the standard execute-change flow.
+ */
+function RemediationOptionsSection({ incident }: { incident: Incident }) {
+  const propose = useProposeRemediation()
+  const data = incident.proposedRemediations
+  const [intent, setIntent] = useState<'rollback' | 'config_change' | 'restart' | 'failover' | 'auto_choose'>('auto_choose')
+
+  if (!data) {
+    return (
+      <div className="rounded-xl border bg-card text-card-foreground shadow-sm overflow-hidden">
+        <div className="px-5 py-3.5 border-b border-border/60 flex items-center justify-between">
+          <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
+            <Wrench className="h-4 w-4 text-muted-foreground" />
+            Remediation options
+          </h3>
+        </div>
+        <div className="px-5 py-5 flex flex-col gap-3">
+          <p className="text-sm text-muted-foreground">
+            Ask the agent to draft 2-3 bounded remediation options for this incident. Each option is single-service, single-environment, single-change-type — the picker highlights the recommended one and its trade-offs.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <Label htmlFor="intent-sel" className="text-xs text-muted-foreground">
+              Intent
+            </Label>
+            <select
+              id="intent-sel"
+              value={intent}
+              onChange={(e) => setIntent(e.target.value as typeof intent)}
+              className="rounded-md border border-border bg-background px-2.5 py-1.5 text-xs text-foreground"
+            >
+              <option value="auto_choose">auto-choose</option>
+              <option value="rollback">rollback</option>
+              <option value="config_change">config change</option>
+              <option value="restart">restart</option>
+              <option value="failover">failover</option>
+            </select>
+            <Button
+              size="sm"
+              disabled={propose.isPending}
+              onClick={() => propose.mutate({ id: incident.incidentId, intent })}
+            >
+              {propose.isPending ? 'Generating…' : 'Propose options'}
+            </Button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="rounded-xl border bg-card text-card-foreground shadow-sm overflow-hidden">
+      <div className="px-5 py-3.5 border-b border-border/60 flex items-center justify-between">
+        <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
+          <Wrench className="h-4 w-4 text-muted-foreground" />
+          Remediation options &middot; {data.options.length}
+        </h3>
+        <Button
+          variant="ghost"
+          size="sm"
+          disabled={propose.isPending}
+          onClick={() => propose.mutate({ id: incident.incidentId, intent })}
+        >
+          {propose.isPending ? 'Regenerating…' : 'Regenerate'}
+        </Button>
+      </div>
+      <div className="px-5 py-4 flex flex-col gap-3">
+        {data.rationale && (
+          <p className="text-sm text-foreground/85 leading-relaxed rounded-md bg-muted px-3 py-2">
+            {data.rationale}
+          </p>
+        )}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          {data.options.map((opt) => {
+            const isRecommended = opt.id === data.recommendedOptionId
+            return (
+              <div
+                key={opt.id}
+                className={cn(
+                  'rounded-lg border p-3 flex flex-col gap-2',
+                  isRecommended
+                    ? 'border-primary/40 bg-primary/5'
+                    : 'border-border bg-card/40',
+                )}
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm font-semibold text-foreground truncate" title={opt.title}>
+                    {opt.label}
+                  </span>
+                  {isRecommended && (
+                    <span className="text-xs font-semibold uppercase tracking-wider rounded px-1.5 py-0.5 bg-primary/15 text-primary flex-shrink-0">
+                      Recommended
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-foreground/85 leading-relaxed line-clamp-3" title={opt.description}>
+                  {opt.description}
+                </p>
+                <div className="flex flex-wrap gap-1.5 mt-1">
+                  <RiskBadge level={opt.estimatedRiskLevel} size="sm" />
+                  <span className="text-xs font-mono rounded bg-muted px-1.5 py-0.5 text-foreground/80">
+                    {opt.riskDelta}
+                  </span>
+                  <span className="text-xs rounded bg-muted px-1.5 py-0.5 text-foreground/80">
+                    {opt.changeType}
+                  </span>
+                </div>
+                <p className="text-xs text-muted-foreground italic mt-1">
+                  {opt.optionRationale}
+                </p>
+                <div className="text-xs text-foreground/80 mt-1">
+                  <span className="font-medium">Rollback{opt.rollbackTested ? ' (tested)' : ''}:</span>{' '}
+                  {opt.rollbackPlan}
+                </div>
+                {opt.suggestedMaintenanceWindow && (
+                  <div className="text-xs text-foreground/70 mt-1">
+                    <span className="font-medium">Window:</span>{' '}
+                    {opt.suggestedMaintenanceWindow}
+                  </div>
+                )}
+                {opt.estimatedBlastRadius.length > 0 && (
+                  <div className="text-xs text-foreground/70 mt-1">
+                    <span className="font-medium">Blast radius:</span>{' '}
+                    {opt.estimatedBlastRadius.map((b) => b.name).join(', ')}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+        {data.warnings && data.warnings.length > 0 && (
+          <div className="rounded-md border border-amber-500/30 bg-amber-500/5 px-3 py-2 flex flex-col gap-1">
+            <span className="text-xs font-semibold text-amber-300 uppercase tracking-wider">
+              Warnings
+            </span>
+            <ul className="text-xs text-amber-200/90 flex flex-col gap-1">
+              {data.warnings.map((w, i) => (
+                <li key={i} className="flex items-start gap-2">
+                  <span
+                    className={cn(
+                      'text-xs font-semibold uppercase tracking-wider rounded px-1.5 flex-shrink-0',
+                      w.severity === 'block' && 'bg-red-500/15 text-red-300',
+                      w.severity === 'warn' && 'bg-amber-500/15 text-amber-300',
+                      w.severity === 'info' && 'bg-muted text-foreground/70',
+                    )}
+                  >
+                    {w.severity}
+                  </span>
+                  <span>{w.note}</span>
+                </li>
+              ))}
+            </ul>
           </div>
         )}
       </div>

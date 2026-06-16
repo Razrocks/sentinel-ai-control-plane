@@ -56,6 +56,7 @@ import {
 } from '@/hooks/useMutations'
 import type { PolicyRule, PolicyRuleInput } from '@/types'
 import { ActionGuardModal } from '@/components/shared'
+import { EmptyState } from '@/components/shared/EmptyState'
 
 // Enriched policy metadata (mock).
 const policyMeta: Record<
@@ -238,16 +239,32 @@ export default function Policies() {
               </div>
             </CardHeader>
             <CardContent className="p-0 divide-y divide-border">
-              {policyRules.filter((rule) => {
+              {(() => {
                 const q = query.trim().toLowerCase()
-                if (!q) return true
-                return (
-                  rule.name.toLowerCase().includes(q) ||
-                  rule.bundle.toLowerCase().includes(q) ||
-                  rule.scope.toLowerCase().includes(q) ||
-                  rule.description.toLowerCase().includes(q)
-                )
-              }).map((rule) => {
+                const list = q
+                  ? policyRules.filter(
+                      (rule) =>
+                        rule.name.toLowerCase().includes(q) ||
+                        rule.bundle.toLowerCase().includes(q) ||
+                        rule.scope.toLowerCase().includes(q) ||
+                        rule.description.toLowerCase().includes(q),
+                    )
+                  : policyRules
+                if (list.length === 0) {
+                  return (
+                    <EmptyState
+                      variant={policyRules.length === 0 ? 'unfiltered' : 'filtered'}
+                      title={policyRules.length === 0 ? 'No policy rules yet' : 'No matches'}
+                      description={
+                        policyRules.length === 0
+                          ? 'Add the first rule to start feeding policy context into agent prompts.'
+                          : `Nothing matches "${query}". Try a different term or clear the filter.`
+                      }
+                    />
+                  )
+                }
+                return list
+              })().map?.((rule) => {
                 const b = decisionBadge(rule.decision)
                 const isSelected = selectedRule === rule.id
                 return (

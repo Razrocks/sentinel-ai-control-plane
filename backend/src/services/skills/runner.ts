@@ -267,7 +267,13 @@ export async function runSkill<TInput = unknown, TOutput = unknown>(
               system: systemBlocks,
               messages: [{ role: 'user', content: user }],
             }),
-          DEFAULT_TIMEOUT_MS,
+          // Bigger output budgets need proportionally more time. We scale
+          // the timeout up from the default 30s baseline so 4k-token skills
+          // (eg propose_bounded_remediation) don't hit C4's hard cap before
+          // the model finishes streaming.
+          spec.maxOutputTokens > 2000
+            ? Math.max(DEFAULT_TIMEOUT_MS, spec.maxOutputTokens * 30)
+            : DEFAULT_TIMEOUT_MS,
         ),
       {
         maxAttempts: 3,

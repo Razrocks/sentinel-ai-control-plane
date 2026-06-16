@@ -4,3 +4,6 @@ dist/
 *.env
 .env.*
 !.env.example
+
+# Postgres backups (Phase 5.4)
+backups/

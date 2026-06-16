@@ -66,6 +66,27 @@ function summarize(kind: AgentKind, data: unknown): string {
   return 'Analysis complete.'
 }
 
+/**
+ * A9 — detect when a sub-skill was blocked by its own self-critique.
+ * The runner returns `status: 'validation_failed'` + errorMessage starting
+ * with `[critique-blocked]` whenever the critic vetoed the candidate output
+ * (eg hallucinated entities, policy contradictions). We surface this as a
+ * distinct visual signal so the user knows the agent caught itself rather
+ * than just "something failed."
+ */
+function detectCritique(data: unknown): string | null {
+  if (!data || typeof data !== 'object') return null
+  const d = data as Record<string, { status?: string; errorMessage?: string } | undefined>
+  for (const k of ['assess', 'blastRadius', 'triage', 'evaluate', 'route', 'impact'] as const) {
+    const step = d[k]
+    if (step?.status === 'validation_failed' && step.errorMessage?.startsWith('[critique-blocked]')) {
+      // Strip the prefix so it reads naturally in the alert body.
+      return step.errorMessage.replace(/^\[critique-blocked\]\s*/, '')
+    }
+  }
+  return null
+}
+
 export function ReanalyzeButton({
   kind,
   entityIdOrTicket,
@@ -88,9 +109,15 @@ export function ReanalyzeButton({
     mutate(entityIdOrTicket)
   }
 
-  const showSuccess = isSuccess && !dismissed
+  // A9: a successful round-trip can still have an embedded critique-block
+  // on one of the sub-skills. We treat that as a third visual state so the
+  // user knows the agent caught its own hallucination — not the same as
+  // "API errored" and not the same as "all good."
+  const critiqueMsg = isSuccess ? detectCritique(data) : null
+  const showSuccess = isSuccess && !dismissed && !critiqueMsg
+  const showCritique = !!critiqueMsg && !dismissed
   const showError = isError && !dismissed
-  const showStatus = showSuccess || showError
+  const showStatus = showSuccess || showError || showCritique
 
   return (
     <div className={cn('flex flex-col gap-3', className)}>
@@ -123,9 +150,11 @@ export function ReanalyzeButton({
         <div
           className={cn(
             'flex items-start gap-2 rounded-md border px-3 py-2 text-xs',
-            showSuccess ? 'border-green-500/30 bg-green-500/5 text-green-200' : 'border-red-500/30 bg-red-500/5 text-red-200',
+            showSuccess && 'border-green-500/30 bg-green-500/5 text-green-200',
+            showCritique && 'border-amber-500/40 bg-amber-500/5 text-amber-200',
+            showError && 'border-red-500/30 bg-red-500/5 text-red-200',
           )}
-          role={showError ? 'alert' : 'status'}
+          role={showError || showCritique ? 'alert' : 'status'}
         >
           {showSuccess ? (
             <CheckCircle2 className="h-4 w-4 mt-0.5 flex-shrink-0" />
@@ -134,15 +163,25 @@ export function ReanalyzeButton({
           )}
           <div className="flex-1">
             <div className="font-medium">
-              {showSuccess ? 'Re-analysis complete' : 'Re-analysis failed'}
+              {showSuccess && 'Re-analysis complete'}
+              {showCritique && 'Agent self-critique blocked the result'}
+              {showError && 'Re-analysis failed'}
             </div>
             <div className="opacity-80 mt-0.5">
-              {showSuccess
-                ? summarize(kind, data)
-                : error instanceof Error
-                ? error.message
-                : 'Unknown error'}
+              {showSuccess && summarize(kind, data)}
+              {showCritique && critiqueMsg}
+              {showError && (error instanceof Error ? error.message : 'Unknown error')}
             </div>
+            {showCritique && (
+              <button
+                type="button"
+                onClick={handleClick}
+                disabled={isPending}
+                className="mt-2 inline-flex items-center gap-1 rounded-md border border-amber-500/40 bg-amber-500/10 px-2 py-1 text-xs font-medium text-amber-200 hover:bg-amber-500/20 transition-colors disabled:opacity-50"
+              >
+                Retry analysis
+              </button>
+            )}
           </div>
           <button
             type="button"

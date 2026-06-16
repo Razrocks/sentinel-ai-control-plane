@@ -33,6 +33,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import { cn } from '@/lib/utils'
+import { EmptyState } from './EmptyState'
 
 interface DataTableProps<T> {
   data: T[]
@@ -40,6 +41,10 @@ interface DataTableProps<T> {
   columns: ColumnDef<T, any>[]
   searchPlaceholder?: string
   pageSize?: number
+  /** Headline for the "no rows at all" empty state. */
+  emptyTitle?: string
+  /** Body copy for the "no rows at all" empty state. */
+  emptyDescription?: string
 }
 
 export function DataTable<T>({
@@ -47,6 +52,8 @@ export function DataTable<T>({
   columns,
   searchPlaceholder = 'Search...',
   pageSize = 20,
+  emptyTitle,
+  emptyDescription,
 }: DataTableProps<T>) {
   const [sorting, setSorting] = useState<SortingState>([])
   const [globalFilter, setGlobalFilter] = useState('')
@@ -126,9 +133,29 @@ export function DataTable<T>({
                 <TableRow>
                   <TableCell
                     colSpan={columns.length}
-                    className="px-5 py-16 text-center text-sm text-muted-foreground"
+                    className="p-0"
                   >
-                    No results found.
+                    {data.length === 0 ? (
+                      <EmptyState
+                        variant="unfiltered"
+                        title={emptyTitle ?? 'Nothing here yet'}
+                        description={
+                          emptyDescription ??
+                          'No records exist yet. Once data flows in, it will surface here.'
+                        }
+                      />
+                    ) : (
+                      <EmptyState
+                        variant="filtered"
+                        title="No matches"
+                        description={`Nothing matches "${globalFilter}". Clear the search or try a different term.`}
+                        action={
+                          <Button variant="outline" size="sm" onClick={() => setGlobalFilter('')}>
+                            Clear search
+                          </Button>
+                        }
+                      />
+                    )}
                   </TableCell>
                 </TableRow>
               ) : (

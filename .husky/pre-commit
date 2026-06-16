@@ -1,0 +1,13 @@
+#!/usr/bin/env sh
+# Pre-commit hook (Phase 5).
+#
+# Runs the existing secret scanner against the staged file set so we never
+# accidentally land Anthropic / AWS keys, JWTs, or private keys in git
+# history. Hook lives in .husky/ so any cloner gets it after `npm install`
+# in the repo root (husky's install script wires the path).
+#
+# Bypass — only when explicitly asked AND user understands risk:
+#   git commit --no-verify
+. "$(dirname -- "$0")/_/husky.sh"
+
+node scripts/secret-scan.mjs --staged

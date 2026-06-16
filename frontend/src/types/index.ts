@@ -35,6 +35,8 @@ export interface Change {
   blastRadius: BlastRadiusItem[]
   recommendations: Recommendation[]
   auditEvents: AuditEvent[]
+  /** B5 — optimistic-lock version. Sent back via If-Match on mutations. */
+  version?: number
 }
 
 export interface BlastRadiusItem {
@@ -68,8 +70,46 @@ export interface Incident {
   awaitingApproval?: boolean
   draftResponse?: string
   notes?: IncidentNote[]
+  /** A6 — multi-option remediation proposal from `propose_bounded_remediation`. */
+  proposedRemediations?: RemediationProposal
   createdAt: string
   updatedAt: string
+  /** B5 — optimistic-lock version. Sent back via If-Match on mutations. */
+  version?: number
+}
+
+export interface RemediationOption {
+  id: string
+  label: string
+  title: string
+  description: string
+  optionRationale: string
+  riskDelta:
+    | 'baseline-recommended'
+    | 'lower-risk-slower'
+    | 'higher-risk-faster'
+    | 'equivalent-different-tradeoff'
+  targetService: string
+  environment: string
+  changeType: 'rollback' | 'config_change' | 'restart' | 'failover'
+  estimatedRiskLevel: RiskLevel
+  estimatedBlastRadius: { name: string; type: string; reason: string }[]
+  rollbackPlan: string
+  rollbackTested: boolean
+  suggestedMaintenanceWindow: string | null
+}
+
+export interface RemediationProposalWarning {
+  severity: 'info' | 'warn' | 'block'
+  note: string
+}
+
+export interface RemediationProposal {
+  options: RemediationOption[]
+  recommendedOptionId: string
+  rationale: string
+  dependencies: string[]
+  warnings: RemediationProposalWarning[]
 }
 
 export interface IncidentNote {
@@ -104,6 +144,8 @@ export interface AccessRequest {
   reason: string
   createdAt: string
   updatedAt: string
+  /** B5 — optimistic-lock version. Sent back via If-Match on mutations. */
+  version?: number
 }
 
 export interface CoApproval {

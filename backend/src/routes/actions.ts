@@ -4,6 +4,7 @@ import { requireAction } from '../middleware/rbac.js'
 import { idempotency } from '../middleware/idempotency.js'
 import { prisma } from '../lib/prisma.js'
 import { NotFoundError, ValidationError } from '../lib/errors.js'
+import { assertVersion, readExpectedVersion } from '../lib/optimistic-lock.js'
 import { resolveCoApproval } from '../services/approval-chain.js'
 import { checkExecutionAllowed, checkSimulationAllowed } from '../services/policy-engine.js'
 import {
@@ -410,6 +411,7 @@ export async function actionsRoutes(app: FastifyInstance) {
     preHandler: [requireAuth, requireAction('execute')],
   }, async (request, reply) => {
     const { id } = request.params as { id: string }
+    const { expectedVersion } = (request.body ?? {}) as { expectedVersion?: number }
 
     // Find the change
     const change = await prisma.change.findFirst({
@@ -424,6 +426,13 @@ export async function actionsRoutes(app: FastifyInstance) {
     if (!change) {
       throw new NotFoundError('Change', id)
     }
+
+    assertVersion(
+      readExpectedVersion(request, expectedVersion),
+      (change as any).version ?? 0,
+      'Change',
+      change.ticketId,
+    )
 
     // Check policy + approval state
     const check = await checkExecutionAllowed(change.id)
@@ -449,7 +458,7 @@ export async function actionsRoutes(app: FastifyInstance) {
     // Execute: update change status
     const updated = await prisma.change.update({
       where: { id: change.id },
-      data: { status: 'deployed' },
+      data: { status: 'deployed', version: { increment: 1 } },
     })
 
     // Log successful execution
@@ -528,8 +537,9 @@ export async function actionsRoutes(app: FastifyInstance) {
     preHandler: [requireAuth, requireAction('escalate')],
   }, async (request, reply) => {
     const { id } = request.params as { id: string }
-    const body = (request.body || {}) as { reason?: string }
+    const body = (request.body || {}) as { reason?: string; expectedVersion?: number }
     const reason = body.reason
+    void reply
 
     const change = await prisma.change.findFirst({
       where: {
@@ -544,11 +554,19 @@ export async function actionsRoutes(app: FastifyInstance) {
       throw new NotFoundError('Change', id)
     }
 
+    assertVersion(
+      readExpectedVersion(request, body.expectedVersion),
+      (change as any).version ?? 0,
+      'Change',
+      change.ticketId,
+    )
+
     const updated = await prisma.change.update({
       where: { id: change.id },
       data: {
         status: 'escalated',
         policyDecision: 'escalate',
+        version: { increment: 1 },
       },
     })
 
@@ -577,7 +595,7 @@ export async function actionsRoutes(app: FastifyInstance) {
     preHandler: [requireAuth],
   }, async (request, reply) => {
     const { id } = request.params as { id: string }
-    const { decision, role } = request.body as { decision: string; role: string }
+    const { decision, role, expectedVersion } = request.body as { decision: string; role: string; expectedVersion?: number }
 
     // Validate inputs
     if (!['approved', 'denied'].includes(decision)) {
@@ -605,6 +623,13 @@ export async function actionsRoutes(app: FastifyInstance) {
     if (!accessReq) {
       throw new NotFoundError('Access Request', id)
     }
+
+    assertVersion(
+      readExpectedVersion(request, expectedVersion),
+      (accessReq as any).version ?? 0,
+      'AccessRequest',
+      accessReq.requestId,
+    )
 
     if (accessReq.status !== 'pending') {
       throw new ValidationError(`Access request is already ${accessReq.status}.`)
@@ -642,6 +667,7 @@ export async function actionsRoutes(app: FastifyInstance) {
       updateData.status = 'approved'
     }
 
+    updateData.version = { increment: 1 }
     const updated = await prisma.accessRequest.update({
       where: { id: accessReq.id },
       data: updateData,
@@ -720,7 +746,8 @@ export async function actionsRoutes(app: FastifyInstance) {
     preHandler: [requireAuth],
   }, async (request, reply) => {
     const { id } = request.params as { id: string }
-    const { status: newStatusRaw } = request.body as { status: string }
+    const { status: newStatusRaw, expectedVersion } = request.body as { status: string; expectedVersion?: number }
+    void reply
 
     // Map API status values to DB enum
     const statusMap: Record<string, string> = {
@@ -752,6 +779,15 @@ export async function actionsRoutes(app: FastifyInstance) {
       throw new NotFoundError('Incident', id)
     }
 
+    // B5: optimistic-lock guard. If the client sent an If-Match header or
+    // expectedVersion body field, refuse if the row already moved.
+    assertVersion(
+      readExpectedVersion(request, expectedVersion),
+      (incident as any).version ?? 0,
+      'Incident',
+      incident.incidentId,
+    )
+
     // Validate status transition order
     const validTransitions: Record<string, string[]> = {
       'new_incident': ['investigating'],
@@ -772,7 +808,7 @@ export async function actionsRoutes(app: FastifyInstance) {
 
     const updated = await prisma.incident.update({
       where: { id: incident.id },
-      data: { status: newStatusDb as any },
+      data: { status: newStatusDb as any, version: { increment: 1 } },
     })
 
     await logIncidentStatusUpdate({
@@ -936,18 +972,24 @@ export async function actionsRoutes(app: FastifyInstance) {
    */
   app.post('/api/incidents/:id/escalate', { preHandler: [requireAuth] }, async (request, reply) => {
     const { id } = request.params as { id: string }
-    const { reason } = request.body as { reason?: string }
+    const { reason, expectedVersion } = request.body as { reason?: string; expectedVersion?: number }
     if (!reason || !reason.trim()) throw new ValidationError('Escalation reason is required.')
     const rbac = requireAction('escalate')
     await rbac(request, reply)
     const incident = await prisma.incident.findFirst({ where: { OR: [{ id }, { incidentId: id }] } })
     if (!incident) throw new NotFoundError('Incident', id)
+    assertVersion(
+      readExpectedVersion(request, expectedVersion),
+      (incident as any).version ?? 0,
+      'Incident',
+      incident.incidentId,
+    )
 
     const escalateMap: Record<string, string> = { sev4: 'sev3', sev3: 'sev2', sev2: 'sev1', sev1: 'sev1' }
     const newSeverity = escalateMap[incident.severity] ?? incident.severity
     const updated = await prisma.incident.update({
       where: { id: incident.id },
-      data: { severity: newSeverity as any },
+      data: { severity: newSeverity as any, version: { increment: 1 } },
     })
     await prisma.incidentNote.create({
       data: {

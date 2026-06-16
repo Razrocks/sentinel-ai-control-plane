@@ -81,11 +81,13 @@ interface AccessRequestDecideInput {
   id: string
   decision: 'approved' | 'denied'
   role: 'manager' | 'owner'
+  expectedVersion?: number
 }
 
 interface IncidentUpdateStatusInput {
   id: string
   status: string
+  expectedVersion?: number
 }
 
 // ─── Approval Mutations ─────────────────────────────────
@@ -281,11 +283,15 @@ export function useApprovalEscalate() {
 export function useChangeExecute() {
   const queryClient = useQueryClient()
 
-  return useMutation<ChangeExecuteResult, Error, string>({
-    mutationFn: async (changeId) => {
+  return useMutation<ChangeExecuteResult, Error, { changeId: string; expectedVersion?: number }>({
+    mutationFn: async ({ changeId, expectedVersion }) => {
       return apiFetch<ChangeExecuteResult>(`/changes/${changeId}/execute`, {
         method: 'POST',
-        body: JSON.stringify({}),
+        headers:
+          typeof expectedVersion === 'number'
+            ? { 'If-Match': `"${expectedVersion}"` }
+            : undefined,
+        body: JSON.stringify({ expectedVersion }),
       })
     },
     onSuccess: () => {
@@ -293,7 +299,14 @@ export function useChangeExecute() {
       queryClient.invalidateQueries({ queryKey: ['auditEvents'] })
       toast.success('Change executed')
     },
-    onError: (err) => {
+    onError: async (err) => {
+      if (err instanceof ApiError && err.status === 412) {
+        await queryClient.refetchQueries({ queryKey: ['changes'], type: 'active' })
+        toast.warning('Change updated since you loaded it', {
+          description: 'Refreshed — review and retry.',
+        })
+        return
+      }
       toast.error('Could not execute change', { description: readableError(err) })
     },
   })
@@ -328,11 +341,15 @@ export function useChangeSimulate() {
 export function useChangeEscalate() {
   const queryClient = useQueryClient()
 
-  return useMutation<Change, Error, { changeId: string; reason?: string }>({
-    mutationFn: async ({ changeId, reason }) => {
+  return useMutation<Change, Error, { changeId: string; reason?: string; expectedVersion?: number }>({
+    mutationFn: async ({ changeId, reason, expectedVersion }) => {
       return apiFetch<Change>(`/changes/${changeId}/escalate`, {
         method: 'POST',
-        body: JSON.stringify({ reason }),
+        headers:
+          typeof expectedVersion === 'number'
+            ? { 'If-Match': `"${expectedVersion}"` }
+            : undefined,
+        body: JSON.stringify({ reason, expectedVersion }),
       })
     },
     onSuccess: () => {
@@ -340,7 +357,14 @@ export function useChangeEscalate() {
       queryClient.invalidateQueries({ queryKey: ['auditEvents'] })
       toast.success('Change escalated')
     },
-    onError: (err) => {
+    onError: async (err) => {
+      if (err instanceof ApiError && err.status === 412) {
+        await queryClient.refetchQueries({ queryKey: ['changes'], type: 'active' })
+        toast.warning('Change updated since you loaded it', {
+          description: 'Refreshed — review and retry.',
+        })
+        return
+      }
       toast.error('Could not escalate', { description: readableError(err) })
     },
   })
@@ -355,10 +379,14 @@ export function useAccessRequestDecide() {
   const queryClient = useQueryClient()
 
   return useMutation<AccessRequest, Error, AccessRequestDecideInput>({
-    mutationFn: async ({ id, decision, role }) => {
+    mutationFn: async ({ id, decision, role, expectedVersion }) => {
       return apiFetch<AccessRequest>(`/access-requests/${id}/decide`, {
         method: 'POST',
-        body: JSON.stringify({ decision, role }),
+        headers:
+          typeof expectedVersion === 'number'
+            ? { 'If-Match': `"${expectedVersion}"` }
+            : undefined,
+        body: JSON.stringify({ decision, role, expectedVersion }),
       })
     },
     onSuccess: (_data, vars) => {
@@ -367,7 +395,14 @@ export function useAccessRequestDecide() {
       queryClient.invalidateQueries({ queryKey: ['auditEvents'] })
       toast.success(`Access request ${vars.decision}`)
     },
-    onError: (err) => {
+    onError: async (err) => {
+      if (err instanceof ApiError && err.status === 412) {
+        await queryClient.refetchQueries({ queryKey: ['accessRequests'], type: 'active' })
+        toast.warning('Request updated since you loaded it', {
+          description: 'Refreshed — review and retry.',
+        })
+        return
+      }
       toast.error('Could not record decision', { description: readableError(err) })
     },
   })
@@ -382,10 +417,14 @@ export function useIncidentUpdateStatus() {
   const queryClient = useQueryClient()
 
   return useMutation<Incident, Error, IncidentUpdateStatusInput>({
-    mutationFn: async ({ id, status }) => {
+    mutationFn: async ({ id, status, expectedVersion }) => {
       return apiFetch<Incident>(`/incidents/${id}/update-status`, {
         method: 'POST',
-        body: JSON.stringify({ status }),
+        headers:
+          typeof expectedVersion === 'number'
+            ? { 'If-Match': `"${expectedVersion}"` }
+            : undefined,
+        body: JSON.stringify({ status, expectedVersion }),
       })
     },
     onSuccess: (_data, vars) => {
@@ -393,7 +432,14 @@ export function useIncidentUpdateStatus() {
       queryClient.invalidateQueries({ queryKey: ['auditEvents'] })
       toast.success(`Incident → ${vars.status}`)
     },
-    onError: (err) => {
+    onError: async (err) => {
+      if (err instanceof ApiError && err.status === 412) {
+        await queryClient.refetchQueries({ queryKey: ['incidents'], type: 'active' })
+        toast.warning('Incident updated since you loaded it', {
+          description: 'Refreshed — review and retry.',
+        })
+        return
+      }
       toast.error('Could not update incident', { description: readableError(err) })
     },
   })
@@ -453,18 +499,31 @@ export function useIncidentDeleteNote() {
 
 export function useIncidentEscalate() {
   const queryClient = useQueryClient()
-  return useMutation<unknown, Error, { id: string; reason: string }>({
-    mutationFn: async ({ id, reason }) =>
+  return useMutation<unknown, Error, { id: string; reason: string; expectedVersion?: number }>({
+    mutationFn: async ({ id, reason, expectedVersion }) =>
       apiFetch(`/incidents/${id}/escalate`, {
         method: 'POST',
-        body: JSON.stringify({ reason }),
+        headers:
+          typeof expectedVersion === 'number'
+            ? { 'If-Match': `"${expectedVersion}"` }
+            : undefined,
+        body: JSON.stringify({ reason, expectedVersion }),
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['incidents'] })
       queryClient.invalidateQueries({ queryKey: ['auditEvents'] })
       toast.success('Incident escalated')
     },
-    onError: (err) => toast.error('Could not escalate', { description: readableError(err) }),
+    onError: async (err) => {
+      if (err instanceof ApiError && err.status === 412) {
+        await queryClient.refetchQueries({ queryKey: ['incidents'], type: 'active' })
+        toast.warning('Incident updated since you loaded it', {
+          description: 'Refreshed — review and retry.',
+        })
+        return
+      }
+      toast.error('Could not escalate', { description: readableError(err) })
+    },
   })
 }
 
@@ -666,6 +725,32 @@ export function useReviewAccessRequestAgent() {
     onError: (err) => {
       toast.error('Review failed', { description: readableError(err) })
     },
+  })
+}
+
+/**
+ * A6 — trigger `propose_bounded_remediation` skill for an incident. Server
+ * persists the result onto `incident.proposedRemediations` so subsequent
+ * page loads render the picker without re-running the LLM.
+ */
+export function useProposeRemediation() {
+  const queryClient = useQueryClient()
+  return useMutation<
+    unknown,
+    Error,
+    { id: string; intent?: 'rollback' | 'config_change' | 'restart' | 'failover' | 'auto_choose'; freeFormHint?: string }
+  >({
+    mutationFn: async ({ id, intent, freeFormHint }) =>
+      apiFetch(`/agents/propose-remediation/${id}`, {
+        method: 'POST',
+        body: JSON.stringify({ intent: intent ?? 'auto_choose', freeFormHint }),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['incidents'] })
+      queryClient.invalidateQueries({ queryKey: ['auditEvents'] })
+      toast.success('Remediation options proposed')
+    },
+    onError: (err) => toast.error('Could not propose options', { description: readableError(err) }),
   })
 }
 

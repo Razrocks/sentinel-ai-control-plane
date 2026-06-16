@@ -69,6 +69,7 @@ function mapChange(change: any) {
     blastRadius: change.blastRadius.map(mapBlastRadiusItem),
     recommendations: change.recommendations.map(mapRecommendation),
     auditEvents: change.auditEvents.map(mapAuditEvent),
+    version: change.version ?? 0,
   }
 }
 

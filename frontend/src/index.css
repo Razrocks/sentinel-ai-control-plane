@@ -208,3 +208,19 @@
   from { opacity: 0; transform: translateY(-4px); }
   to { opacity: 1; transform: translateY(0); }
 }
+
+/* Page transition — short, polite fade-in on route change. Triggered by
+   keying the outlet wrapper on location.pathname (AppShell.tsx). Honors
+   prefers-reduced-motion so users with motion sensitivity see no animation. */
+@keyframes pageIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.animate-page-in {
+  animation: pageIn 220ms ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .animate-page-in {
+    animation: none;
+  }
+}

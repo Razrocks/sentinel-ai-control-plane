@@ -38,6 +38,7 @@ import {
   ApprovalConflictError,
 } from '@/hooks/useMutations'
 import { ActionGuardModal } from '@/components/shared'
+import { EmptyState } from '@/components/shared/EmptyState'
 import { timeAgo, cn } from '@/lib/utils'
 import { useRole } from '@/lib/roles'
 import { useAuth } from '@/lib/auth'
@@ -436,11 +437,16 @@ export default function Approvals() {
 
       {!isLoading && filtered.length === 0 && (
         <Card>
-          <CardContent className="flex flex-col items-center justify-center gap-3 py-20">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-              <Inbox className="h-5 w-5 text-muted-foreground" />
-            </div>
-            <p className="text-sm text-muted-foreground">No approvals match this filter.</p>
+          <CardContent className="p-0">
+            <EmptyState
+              variant={approvals.length === 0 ? 'unfiltered' : 'filtered'}
+              title={approvals.length === 0 ? 'Inbox zero' : 'Nothing here'}
+              description={
+                approvals.length === 0
+                  ? 'No pending approvals. New requests land here as soon as they pass policy intake.'
+                  : 'No approvals match the current filter. Try a different status or clear the search.'
+              }
+            />
           </CardContent>
         </Card>
       )}

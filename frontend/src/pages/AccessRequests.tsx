@@ -274,6 +274,8 @@ export default function AccessRequests() {
         </div>
       ) : (
         <DataTable
+          emptyTitle="No access requests"
+          emptyDescription="When a teammate requests entitlements to a system, the request and approval chain show up here."
           data={accessRequests}
           columns={columns}
           searchPlaceholder="Search requests by name, system, role..."

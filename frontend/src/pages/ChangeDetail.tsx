@@ -415,7 +415,7 @@ export default function ChangeDetail() {
         title: 'Escalate Change',
         description,
         action: () => {
-          escalateChange.mutate({ changeId: change!.id })
+          escalateChange.mutate({ changeId: change!.id, expectedVersion: change!.version })
           setGuardModal(null)
         },
       })
@@ -425,7 +425,7 @@ export default function ChangeDetail() {
         title: 'Execute Change',
         description: 'This will deploy the change to the target environment.',
         action: () => {
-          executeChange.mutate(change!.id)
+          executeChange.mutate({ changeId: change!.id, expectedVersion: change!.version })
           setGuardModal(null)
         },
       })
@@ -502,7 +502,7 @@ export default function ChangeDetail() {
       </div>
 
       {/* Three-column layout */}
-      <div className="grid grid-cols-[280px_1fr_280px] gap-5">
+      <div className="grid grid-cols-1 gap-5 lg:grid-cols-[280px_1fr_280px]">
         {/* Left: Context */}
         <div className="space-y-4">
           <div className="bg-card rounded-lg border border-border p-4 space-y-4">

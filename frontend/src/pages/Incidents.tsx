@@ -250,6 +250,8 @@ export default function Incidents() {
         </div>
       ) : (
         <DataTable
+          emptyTitle="No incidents"
+          emptyDescription="Quiet so far — no open incidents. New tickets from Sentry, PagerDuty, or manual creation appear here."
           data={incidents}
           columns={columns}
           searchPlaceholder="Search incidents by title, service, requester..."

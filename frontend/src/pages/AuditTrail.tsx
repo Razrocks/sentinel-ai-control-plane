@@ -19,6 +19,7 @@ import {
   Search,
 } from 'lucide-react'
 import { Input } from '@/components/ui/input'
+import { EmptyState } from '@/components/shared/EmptyState'
 import { useAuditEvents } from '@/hooks/useData'
 import { useAuditStream } from '@/hooks/useAuditStream'
 import { formatDate, cn } from '@/lib/utils'
@@ -360,8 +361,12 @@ export default function AuditTrail() {
                 })}
                 {filtered.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={7} className="px-5 py-16 text-center text-sm text-muted-foreground">
-                      No events matching this filter
+                    <TableCell colSpan={7} className="p-0">
+                      <EmptyState
+                        variant="filtered"
+                        title="No events match"
+                        description="Try widening the date range, clearing actor/action filters, or removing the search query."
+                      />
                     </TableCell>
                   </TableRow>
                 )}

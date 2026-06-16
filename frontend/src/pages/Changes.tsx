@@ -220,6 +220,8 @@ export default function Changes() {
           data={changes}
           columns={columns}
           searchPlaceholder="Search changes by title, service, owner..."
+          emptyTitle="No changes yet"
+          emptyDescription="When a pull request lands or a deploy is scheduled, the change shows up here for review."
         />
       )}
     </div>

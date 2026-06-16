@@ -54,5 +54,6 @@ function mapAccessRequest(ar: any) {
     reason: ar.reason,
     createdAt: ar.createdAt.toISOString(),
     updatedAt: ar.updatedAt.toISOString(),
+    version: ar.version ?? 0,
   }
 }

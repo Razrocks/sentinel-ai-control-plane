@@ -18,7 +18,12 @@ import {
   reviewAccessRequest,
   routeApproval,
 } from '../services/agents/index.js'
-import { isSkillRunnerConfigured } from '../services/skills/index.js'
+import { isSkillRunnerConfigured, runSkill } from '../services/skills/index.js'
+import { buildBaseContext } from '../services/agents/context.js'
+import type {
+  ProposeBoundedRemediationInput,
+  ProposeBoundedRemediationOutput,
+} from '../services/skills/index.js'
 
 export async function agentsRoutes(app: FastifyInstance) {
   // ── Health: skill runner configuration ─────────────────
@@ -132,6 +137,70 @@ export async function agentsRoutes(app: FastifyInstance) {
         requiredApproverRoles: request.body?.requiredApproverRoles,
         actor: request.user!.name,
       })
+      return result
+    },
+  )
+
+  // ── A6: propose multi-option remediation for an incident ────────
+  // Wraps `propose_bounded_remediation` skill, persists output JSON to
+  // incident.proposedRemediations so the UI picker can render without
+  // re-running the LLM. RBAC: engineer/operator/admin can trigger.
+  app.post<{
+    Params: { id: string }
+    Body: { intent?: ProposeBoundedRemediationInput['intent']; freeFormHint?: string }
+  }>(
+    '/api/agents/propose-remediation/:id',
+    {
+      preHandler: [requireAuth, requireRole('admin', 'operator', 'engineer')],
+    },
+    async (request) => {
+      if (!isSkillRunnerConfigured()) {
+        throw new ValidationError('Skill runner not configured (ANTHROPIC_API_KEY missing)')
+      }
+      const incident = await prisma.incident.findFirst({
+        where: { OR: [{ id: request.params.id }, { incidentId: request.params.id }] },
+      })
+      if (!incident) throw new NotFoundError('Incident', request.params.id)
+
+      const actor = request.user!.name
+      const ctx = await buildBaseContext({ actor, role: request.user!.role, includeRole: false })
+
+      const input: ProposeBoundedRemediationInput = {
+        incident: {
+          id: incident.id,
+          incidentId: incident.incidentId,
+          title: incident.title,
+          description: incident.description,
+          affectedService: incident.affectedService,
+          severity: incident.severity,
+          likelyIssueType: incident.likelyIssueType,
+          rootCauseCategory: incident.rootCauseCategory,
+          relatedChanges: incident.relatedChanges,
+        },
+        authorContext: {
+          name: request.user!.name,
+          role: request.user!.role as ProposeBoundedRemediationInput['authorContext']['role'],
+          team: request.user!.team ?? 'unknown',
+          systemsOwned: [],
+        },
+        intent: request.body?.intent ?? 'auto_choose',
+        freeFormHint: request.body?.freeFormHint,
+      }
+
+      const result = await runSkill<ProposeBoundedRemediationInput, ProposeBoundedRemediationOutput>(
+        'propose_bounded_remediation',
+        input,
+        ctx,
+        { actor },
+      )
+
+      if (result.status === 'success' && result.output) {
+        await prisma.incident.update({
+          where: { id: incident.id },
+          data: { proposedRemediations: result.output as object },
+        })
+      }
+
       return result
     },
   )

@@ -166,6 +166,9 @@ model User {
   @@map("users")
 }
 
+/// B5 — optimistic-lock version on Change/Incident/AccessRequest so
+/// concurrent mutations get a clean 412 instead of silently overwriting
+/// each other. Bumped in every state-changing route.
 model Change {
   id                String         @id @default(cuid())
   ticketId          String         @unique @map("ticket_id")
@@ -187,6 +190,7 @@ model Change {
   rollbackPlan           Boolean        @map("rollback_plan")
   createdAt         DateTime       @default(now()) @map("created_at")
   updatedAt         DateTime       @updatedAt @map("updated_at")
+  version           Int            @default(0)
 
   blastRadius     BlastRadiusItem[]
   recommendations Recommendation[]
@@ -256,8 +260,14 @@ model Incident {
   /// Optional rolling draft response text. Operators can iterate on it
   /// before routing to the customer. Persisted so refresh doesn't lose work.
   draftResponse     String?          @map("draft_response")
+  /// A6: persisted output of `propose_bounded_remediation` skill. Stored as
+  /// the raw skill JSON ({ options: [...], recommendedOptionId, ... }) so
+  /// the UI can render a multi-option picker without re-running the LLM.
+  /// Null until the operator triggers proposal generation.
+  proposedRemediations Json?         @map("proposed_remediations")
   createdAt         DateTime         @default(now()) @map("created_at")
   updatedAt         DateTime         @updatedAt @map("updated_at")
+  version           Int              @default(0)
 
   notes IncidentNote[]
 
@@ -309,6 +319,7 @@ model AccessRequest {
   reason                  String
   createdAt               DateTime            @default(now()) @map("created_at")
   updatedAt               DateTime            @updatedAt @map("updated_at")
+  version                 Int                 @default(0)
 
   @@index([status])
   @@index([riskLevel])

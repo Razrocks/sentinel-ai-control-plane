@@ -56,6 +56,7 @@ function mapIncident(incident: any) {
     isRecurring: incident.isRecurring,
     awaitingApproval: incident.awaitingApproval ?? false,
     draftResponse: incident.draftResponse ?? undefined,
+    proposedRemediations: incident.proposedRemediations ?? undefined,
     notes:
       incident.notes?.map((n: any) => ({
         id: n.id,
@@ -68,5 +69,6 @@ function mapIncident(incident: any) {
       })) ?? [],
     createdAt: incident.createdAt.toISOString(),
     updatedAt: incident.updatedAt.toISOString(),
+    version: incident.version ?? 0,
   }
 }

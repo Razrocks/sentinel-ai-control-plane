@@ -20,12 +20,12 @@ import { prisma } from '../lib/prisma.js'
 
 // Sonnet 4 + Haiku 4.5 pricing (USD per 1M tokens).
 const PRICING: Record<string, { in: number; out: number }> = {
-  'claude-sonnet-4-20250514': { in: 3, out: 15 },
+  'claude-sonnet-4-6': { in: 3, out: 15 },
   'claude-haiku-4-5-20251001': { in: 1, out: 5 },
 }
 
 function modelCostUsd(model: string, tokensIn: number, tokensOut: number): number {
-  const p = PRICING[model] ?? PRICING['claude-sonnet-4-20250514']
+  const p = PRICING[model] ?? PRICING['claude-sonnet-4-6']
   return (tokensIn * p.in + tokensOut * p.out) / 1_000_000
 }
 

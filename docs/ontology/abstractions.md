@@ -129,7 +129,7 @@ Provenance for every agentic skill call.
 | `auditEventId` | string \| null (unique) | Link to the audit event this call produced, if any. |
 | `skill` | string | Skill name from the registry, e.g. `assess_change`. |
 | `kind` | enum `agentic \| deterministic \| integration` | Deterministic skills do not write here; this column exists for forward-compat. |
-| `model` | string | E.g. `claude-sonnet-4-20250514`. |
+| `model` | string | E.g. `claude-sonnet-4-6`. |
 | `promptHash` | string | SHA-256 of the rendered prompt. |
 | `tokensIn` / `tokensOut` | int | |
 | `cached` | boolean | True when result came from a content-addressed cache. |

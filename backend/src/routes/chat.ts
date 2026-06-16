@@ -17,8 +17,12 @@ import { renderT3Context, renderT4Context } from '../services/skills/index.js'
 import { CHAT_TOOLS, executeTool } from '../services/chat-tools.js'
 
 const MAX_TOOL_ITERATIONS = 5
-const CHAT_MODEL = 'claude-sonnet-4-20250514'
-const CHAT_MAX_TOKENS = 1024
+const CHAT_MODEL = 'claude-sonnet-4-6'
+// Bumped from 1024 → 4096 after long analytical responses (multi-issue
+// triage + proposed solutions + plan) were getting truncated mid-sentence.
+// 4096 is generous but still well below the model's actual ceiling, and
+// the streaming UI handles longer payloads fine.
+const CHAT_MAX_TOKENS = 4096
 
 // Lazy Anthropic client (config-checked before use)
 let _client: Anthropic | null = null

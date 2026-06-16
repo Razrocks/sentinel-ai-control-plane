@@ -97,7 +97,7 @@ Output strictly as JSON.
 ```
 
 ## Model
-`claude-sonnet-4-20250514` (or `claude-haiku-4-5-20251001` for chat surfaces — explanation is bounded enough that haiku suffices in most cases)
+`claude-sonnet-4-6` (or `claude-haiku-4-5-20251001` for chat surfaces — explanation is bounded enough that haiku suffices in most cases)
 
 ## Temperature
 `0.2`

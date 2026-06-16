@@ -192,12 +192,12 @@ const DAILY_COST_CAP_USD = 5.0 // generous default; per-user
 
 // Sonnet 4 + Haiku 4.5 pricing (USD per million tokens).
 const PRICING: Record<string, { in: number; out: number }> = {
-  'claude-sonnet-4-20250514': { in: 3, out: 15 },
+  'claude-sonnet-4-6': { in: 3, out: 15 },
   'claude-haiku-4-5-20251001': { in: 1, out: 5 },
 }
 
 function modelCostUsd(model: string, tokensIn: number, tokensOut: number): number {
-  const p = PRICING[model] ?? PRICING['claude-sonnet-4-20250514']
+  const p = PRICING[model] ?? PRICING['claude-sonnet-4-6']
   return (tokensIn * p.in + tokensOut * p.out) / 1_000_000
 }
 
@@ -241,7 +241,7 @@ export async function checkCostCap(actor: string): Promise<void> {
  * Used when the primary model 429s or 5xxs persistently.
  */
 export function getFallbackModel(primary: string): string | null {
-  if (primary === 'claude-sonnet-4-20250514') return 'claude-haiku-4-5-20251001'
+  if (primary === 'claude-sonnet-4-6') return 'claude-haiku-4-5-20251001'
   // Haiku has no further fallback.
   return null
 }

@@ -1,5 +1,12 @@
 # Implementation Phases
 
+> **Heads up — this is the ORIGINAL engineering plan from early in the
+> project.** The product-side rebuild (B5 / A6 / A9, integration rollout,
+> UI rehaul, pre-pilot hardening) tracked separately. Current status of
+> the whole project, including the newer phases, lives in
+> [../README.md](../README.md). This doc is kept for historical context
+> on the backend-skeleton-through-MCP arc.
+
 What gets built when. Each phase has a goal, the deliverable, the verification gate, and the dependency on prior phases. Phases 1–7 are complete; this document captures their state and lays out 8–11.
 
 ## Phase status

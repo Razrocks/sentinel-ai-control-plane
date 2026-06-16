@@ -93,7 +93,7 @@ either items or excluded. items.length + excluded.length must equal candidates.l
 ```
 
 ## Model
-`claude-sonnet-4-20250514`
+`claude-sonnet-4-6`
 
 ## Temperature
 `0.1`

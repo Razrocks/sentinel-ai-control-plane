@@ -22,7 +22,13 @@ async function ensureInit(): Promise<void> {
   const dsn = (import.meta as any).env?.VITE_SENTRY_DSN as string | undefined
   if (!dsn) return
   try {
-    const mod = await import('@sentry/react' as any)
+    // Hide the specifier behind a runtime-built string so Vite's static
+    // analysis never sees `@sentry/react` as an import target. If we
+    // wrote the literal directly the dev server would bomb whenever
+    // the package isn't installed — even though this path is gated on
+    // VITE_SENTRY_DSN and only runs in opt-in deployments.
+    const specifier = ['@sentry', 'react'].join('/')
+    const mod = await import(/* @vite-ignore */ specifier)
     mod.init({
       dsn,
       environment: (import.meta as any).env?.MODE ?? 'production',

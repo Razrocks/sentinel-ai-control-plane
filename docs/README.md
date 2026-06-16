@@ -20,6 +20,9 @@ Read top-down. The order is roughly: what the system *is*, what it *contains*, h
 | How agents surface in the UI per role (ChatPanel, ContextualAssistant, role quick-actions) | [agents/ui-role-surfaces.md](agents/ui-role-surfaces.md) |
 | What external systems Sentinel talks to and why | [integrations/integrations.md](integrations/integrations.md) |
 | How those connections work via MCP — server registry, adapters, lifecycle | [integrations/mcp-model.md](integrations/mcp-model.md) |
+| Per-integration setup (auth, scopes, webhook URL, troubleshooting) | [github](integrations/github.md) · [slack](integrations/slack.md) · [linear](integrations/linear.md) · [sentry](integrations/sentry.md) |
+| Which T1/T2/T5 context tiers each agent skill receives, and why | [skills-context-audit.md](skills-context-audit.md) |
+| Postgres backup + restore drill steps | [runbooks/db-restore.md](runbooks/db-restore.md) |
 | What gets built when, and what each phase deliverable is | [implementation/implementation-phases.md](implementation/implementation-phases.md) |
 
 ## Sibling tree
@@ -30,10 +33,15 @@ Read top-down. The order is roughly: what the system *is*, what it *contains*, h
 
 ## Status
 
-- **Phase 0** — schema reconciliation: complete (2026-04-27). AgentInvocation, FreezeWindow, condition resolution fields, maintenance window timestamps, user manager hierarchy.
-- **Phases 1–7** — backend skeleton through Claude streaming chat: complete.
-- **Phase 8** — skills registry, context builder, refactored advisors: in scope next.
-- **Phase 9** — autonomous skills (write-path): gated on Phase 8.
+All build phases shipped. See [implementation/implementation-phases.md](implementation/implementation-phases.md) for the original plan and what landed under each phase.
+
+- **Phase 0** — Current sprint (B5 If-Match optimistic locking · A9 self-critique · A6 multi-option proposals): ✅
+- **Phase 1** — Open tier close-out (toast notifications, T1/T2/T5 skill audit, version handshake across all mutations): ✅
+- **Phase 2** — Integration foundation (encryption, webhook router, adapter pattern, setup wizard): ✅
+- **Phase 3** — Integration rollout (GitHub, Slack, Linear, Sentry adapters + per-integration docs): ✅
+- **Phase 4** — UI rehaul (shadcn design system foundation + every page on new system + responsive/animation/empty-state cross-cutting pass): ✅
+- **Phase 5** — Pre-pilot hardening (smoke tests, secret-scan CI + pre-commit, Postgres backup + restore drill, Sentry self-monitoring stub, frontend error boundary): ✅
+- **Phase 6** — Optional scaling work (OTel, multi-tenant, SSO, k8s): explicitly skipped — out of scope for a personal project.
 
 ## Non-negotiable principles
 

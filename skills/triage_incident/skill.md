@@ -99,7 +99,7 @@ Output strictly as JSON.
 ```
 
 ## Model
-`claude-sonnet-4-20250514`
+`claude-sonnet-4-6`
 
 ## Temperature
 `0.1`

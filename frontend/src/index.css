@@ -224,3 +224,25 @@
     animation: none;
   }
 }
+
+/* Cycling 3-dot "thinking" indicator for chat surfaces. Each dot fades on
+   a staggered loop so they appear to cycle left → right. Used by both
+   ChatPanel and ContextualAssistant. */
+@keyframes thinkingDot {
+  0%, 80%, 100% { opacity: 0.2; transform: translateY(0); }
+  40%           { opacity: 1;   transform: translateY(-2px); }
+}
+.chat-thinking-dots > span {
+  display: inline-block;
+  animation: thinkingDot 1.2s ease-in-out infinite both;
+  font-weight: bold;
+}
+.chat-thinking-dots > span:nth-child(1) { animation-delay: 0s; }
+.chat-thinking-dots > span:nth-child(2) { animation-delay: 0.15s; }
+.chat-thinking-dots > span:nth-child(3) { animation-delay: 0.3s; }
+@media (prefers-reduced-motion: reduce) {
+  .chat-thinking-dots > span {
+    animation: none;
+    opacity: 0.6;
+  }
+}

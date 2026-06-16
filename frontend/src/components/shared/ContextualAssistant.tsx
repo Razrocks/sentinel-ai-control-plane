@@ -377,6 +377,21 @@ export function ContextualAssistant({ entityType, entityId, entityTitle, quickAc
                 )}
               </div>
             ))}
+            {/* Thinking indicator — fires while streaming until the new
+                assistant reply has any content. Cycling dots via CSS. */}
+            {isStreaming &&
+              (messages.length === 0 ||
+                (messages[messages.length - 1].role === 'assistant' &&
+                  !messages[messages.length - 1].content.trim())) && (
+                <div className="bg-muted text-foreground/85 rounded-lg px-3 py-2 text-sm inline-flex items-center gap-2 self-start">
+                  <span className="text-muted-foreground">Thinking</span>
+                  <span className="chat-thinking-dots inline-flex gap-0.5">
+                    <span>.</span>
+                    <span>.</span>
+                    <span>.</span>
+                  </span>
+                </div>
+              )}
             <div ref={messagesEndRef} />
           </div>
 
@@ -399,23 +414,24 @@ export function ContextualAssistant({ entityType, entityId, entityTitle, quickAc
 
           {/* Input */}
           <div className="px-4 py-3 border-t border-border bg-muted/20">
-            <div className="flex gap-2">
+            <div className="flex gap-2 items-center">
               <input
                 ref={inputRef}
                 type="text"
                 value={input}
                 onChange={e => setInput(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && !isStreaming && sendMessage(input)}
-                placeholder={isStreaming ? 'Thinking...' : 'Ask about this record...'}
+                placeholder={isStreaming ? 'Thinking…' : 'Ask about this record…'}
                 disabled={isStreaming}
-                className="flex-1 h-10 rounded-md border border-border bg-card px-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:opacity-60"
+                className="flex-1 h-11 rounded-md border border-border bg-card px-3.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:opacity-60"
               />
               <button
                 onClick={() => sendMessage(input)}
                 disabled={!input.trim() || isStreaming}
-                className="flex h-10 w-10 items-center justify-center rounded-md bg-primary text-primary-foreground hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                aria-label={isStreaming ? 'Sending…' : 'Send message'}
+                className="flex h-11 w-11 items-center justify-center rounded-md bg-primary text-primary-foreground shadow-sm hover:bg-primary/90 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                {isStreaming ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                {isStreaming ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
               </button>
             </div>
           </div>

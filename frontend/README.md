@@ -1,73 +1,109 @@
-# React + TypeScript + Vite
+# Sentinel Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React + TypeScript + Vite + Tailwind v4 + shadcn/ui.
 
-Currently, two official plugins are available:
+The ops console — every page lives under `src/pages/`. State comes from
+TanStack Query hooks in `src/hooks/useData.ts` (reads) and
+`src/hooks/useMutations.ts` (writes). UI primitives are the shadcn preset
+`b43xY389C` under `src/components/ui/`; shared composites (badges,
+EmptyState, ChatPanel, ContextualAssistant, ErrorBoundary) live under
+`src/components/shared/`.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+See the [root README](../README.md) for the project overview, quick-start,
+and architecture diagram.
 
-## React Compiler
+## Run
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```bash
+npm install
+npm run dev          # vite on http://localhost:5173
+npm run build        # tsc + vite build
+npm run lint         # eslint
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+Backend must be running at http://localhost:3001 — see `../docker-compose.yml`.
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Structure
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
 ```
+src/
+├── pages/                  # one file per route
+│   ├── Dashboard.tsx       # 5 role-specific dashboards in one file
+│   ├── Approvals.tsx       # inbox + decision cards + NotesSection
+│   ├── Changes.tsx         # list + KPI row
+│   ├── ChangeDetail.tsx    # 3-col + tab nav
+│   ├── Incidents.tsx       # list + KPI row
+│   ├── IncidentDetail.tsx  # 2-col + accordion body + multi-option remediation picker
+│   ├── AccessRequests.tsx
+│   ├── AccessRequestDetail.tsx
+│   ├── AuditTrail.tsx      # filterable stream + SSE live tail
+│   ├── Policies.tsx        # rule CRUD + agent-context preview
+│   ├── Settings.tsx        # integration cards
+│   ├── AdminMetrics.tsx    # skill costs, latency, model usage
+│   ├── Setup.tsx           # first-run wizard
+│   └── Login.tsx
+│
+├── components/
+│   ├── ui/                 # shadcn preset primitives — don't hand-edit
+│   ├── shared/             # app-specific composites
+│   │   ├── EmptyState.tsx
+│   │   ├── ErrorBoundary.tsx
+│   │   ├── ChatPanel.tsx
+│   │   ├── ContextualAssistant.tsx
+│   │   ├── ReanalyzeButton.tsx
+│   │   ├── RiskBadge.tsx
+│   │   ├── ApprovalBadge.tsx
+│   │   └── ...
+│   └── layout/             # AppShell, Sidebar, TopBar
+│
+├── hooks/
+│   ├── useData.ts          # GET hooks (useChanges, useIncidents, ...)
+│   ├── useMutations.ts     # POST/PATCH/DELETE hooks with toast + If-Match
+│   ├── useAuditStream.ts   # SSE subscription
+│   └── useSetup.ts
+│
+├── lib/
+│   ├── api.ts              # fetch wrapper + ApiError
+│   ├── auth.ts             # JWT context + useAuth
+│   ├── roles.ts            # role → permitted actions map
+│   ├── self-monitor.ts     # lazy Sentry stub (opt-in)
+│   └── utils.ts            # cn(), formatDate(), timeAgo()
+│
+├── types/index.ts          # mirrors backend response shapes
+└── main.tsx                # ErrorBoundary + QueryClient + Toaster + Router
+```
+
+## Key conventions
+
+- **Path alias `@/`** → `src/`. Configured in `vite.config.ts` and
+  `tsconfig.json`.
+- **Tailwind v4 with `@theme inline`** — design tokens in `src/index.css`.
+  No `tailwind.config.js`.
+- **shadcn primitives** — installed via preset `b43xY389C`. The Card
+  primitive has `overflow-hidden` REMOVED globally so text near rounded
+  corners doesn't get clipped (see `src/components/ui/card.tsx`).
+- **Optimistic locking (B5)** — mutations on versioned entities send
+  `If-Match: "<version>"` + `expectedVersion` body field. 412 → auto
+  refetch + warning toast.
+- **Toast pattern** — `useMutation` hooks call `toast.success()` on
+  success, route 412 to a warn toast, fall through to a generic error
+  toast with backend `message` surfaced via `readableError()`.
+- **Chat persistence** — ChatPanel + ContextualAssistant use a
+  deterministic sessionId (`global` / `entity-<type>-<id>`) so the same
+  user on a different browser sees the same conversation. Server is
+  source of truth; localStorage is a cache.
+
+## Adding a page
+
+1. Create the component under `src/pages/`.
+2. Register the route in `src/App.tsx`.
+3. Add a sidebar entry in `src/components/layout/Sidebar.tsx` if the page
+   is user-navigable.
+4. Use a query hook in `src/hooks/useData.ts` for data; don't fetch inline.
+5. Reach for shadcn primitives over hand-rolled equivalents.
+
+## Optional opt-ins
+
+| Feature | How to enable |
+|---|---|
+| Sentry error reporting | `npm install @sentry/react` + add `VITE_SENTRY_DSN=...` to `.env`. Wired in `src/lib/self-monitor.ts` via lazy dynamic import — no-op when not configured. |

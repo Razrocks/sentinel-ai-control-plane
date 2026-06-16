@@ -128,7 +128,7 @@ Risk class definitions:
 ```
 
 ## Model
-`claude-sonnet-4-20250514`
+`claude-sonnet-4-6`
 
 ## Temperature
 `0.1` — risk classification must be reproducible across runs.

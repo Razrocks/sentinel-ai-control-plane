@@ -273,10 +273,12 @@ export function ChatPanel() {
   const currentPath = window.location.pathname
   const basePath = '/' + (currentPath.split('/')[1] || '')
 
-  // Hide on detail pages — they use ContextualAssistant instead
+  // Detail-page detection moved BELOW the hook section. Early-returning
+  // here would skip the useEffects below and trip "Rendered more hooks
+  // than during the previous render" when the user navigates between a
+  // detail page (returns null) and any other page (renders + hooks).
   const pathParts = currentPath.split('/').filter(Boolean)
   const isDetailPage = pathParts.length >= 2 && ['changes', 'incidents', 'access-requests'].includes(pathParts[0])
-  if (isDetailPage) return null
 
   const guardrail = roleGuardrails[role]
 
@@ -475,6 +477,8 @@ export function ChatPanel() {
     )
   }
 
+  if (isDetailPage) return null
+
   return (
     <div
       className={cn(
@@ -567,6 +571,24 @@ export function ChatPanel() {
                 </div>
               </div>
             ))}
+            {/* Thinking indicator — fires while streaming until the
+                assistant's reply has any content. Cycling 3-dot animation
+                via the .chat-thinking-dots class in index.css. */}
+            {isStreaming &&
+              (messages.length === 0 ||
+                (messages[messages.length - 1].role === 'assistant' &&
+                  !messages[messages.length - 1].content.trim())) && (
+                <div className="flex justify-start">
+                  <div className="max-w-[75%] bg-muted text-foreground/85 rounded-lg px-3 py-2.5 text-sm inline-flex items-center gap-2">
+                    <span className="text-muted-foreground">Thinking</span>
+                    <span className="chat-thinking-dots inline-flex gap-0.5">
+                      <span>.</span>
+                      <span>.</span>
+                      <span>.</span>
+                    </span>
+                  </div>
+                </div>
+              )}
             <div ref={messagesEndRef} />
           </div>
 
@@ -588,24 +610,25 @@ export function ChatPanel() {
           )}
 
           {/* Input */}
-          <div className="px-4 py-2.5 border-t border-border">
-            <div className="flex gap-2">
+          <div className="px-4 py-3 border-t border-border">
+            <div className="flex gap-2 items-center">
               <input
                 ref={inputRef}
                 type="text"
                 value={input}
                 onChange={e => setInput(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && !isStreaming && handleSend()}
-                placeholder={isStreaming ? 'Sentinel is thinking...' : `Ask Sentinel (${guardrail.label})...`}
+                placeholder={isStreaming ? 'Sentinel is thinking…' : `Ask Sentinel (${guardrail.label})…`}
                 disabled={isStreaming}
-                className="flex-1 h-9 rounded-md border border-border bg-muted px-3 text-sm text-foreground placeholder:text-muted-foreground focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-60"
+                className="flex-1 h-11 rounded-md border border-border bg-muted px-3.5 text-sm text-foreground placeholder:text-muted-foreground focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent disabled:opacity-60"
               />
               <button
                 onClick={handleSend}
                 disabled={!input.trim() || isStreaming}
-                className="h-9 px-3 rounded-md bg-primary text-white hover:bg-primary-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                aria-label={isStreaming ? 'Sending…' : 'Send message'}
+                className="flex h-11 w-11 items-center justify-center rounded-md bg-primary text-white shadow-sm hover:bg-primary-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
-                {isStreaming ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                {isStreaming ? <Loader2 className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
               </button>
             </div>
           </div>

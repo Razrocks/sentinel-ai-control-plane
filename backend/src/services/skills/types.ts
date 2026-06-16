@@ -250,7 +250,7 @@ export interface SkillContext {
 export interface SkillSpec<TInput = unknown, TOutput = unknown> {
   name: SkillName
   kind: SkillKind
-  /** Anthropic model ID, e.g. "claude-sonnet-4-20250514". */
+  /** Anthropic model ID, e.g. "claude-sonnet-4-6". */
   model: string
   temperature: number
   maxInputTokens: number

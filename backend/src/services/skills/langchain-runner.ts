@@ -253,7 +253,7 @@ export async function runSkillViaLangChain<TInput = unknown, TOutput = unknown>(
       latencyMs: usage.latencyMs,
       confidence: null,
       status: 'success',
-      errorMessage: undefined,
+      errorMessage: null,
       actor,
     })
   }

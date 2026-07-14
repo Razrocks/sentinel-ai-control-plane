@@ -45,9 +45,6 @@ const emptyCatalog: T1dOrgCatalog = {
 
 const t5Now: T5Context = {
   now: '2026-01-15T12:00:00Z',
-  isWeekend: false,
-  isBusinessHours: true,
-  timezone: 'UTC',
 }
 
 // ─── Tier renderers ─────────────────────────────────────
@@ -55,6 +52,7 @@ const t5Now: T5Context = {
 describe('renderT1aIdentity', () => {
   it('emits the ## Identity heading and formats constraints as bullets', () => {
     const out = renderT1aIdentity({
+      systemRole: 'sentinel',
       hardConstraints: ['do X', 'never do Y'],
     })
     expect(out).toMatch(/^## Identity/)

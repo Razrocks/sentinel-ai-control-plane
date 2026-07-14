@@ -64,6 +64,15 @@ Set up `backend/.env` from `.env.example`. Minimum:
 node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 ```
 
+Run tests:
+
+```bash
+cd backend && npm test   # 96 unit tests, pure logic, no infra needed
+cd frontend && npm test  # 38 unit tests, no browser needed
+```
+
+More detail in [docs/testing.md](docs/testing.md).
+
 ---
 
 ## Context tiers
@@ -102,6 +111,7 @@ The interesting reading. Each is a focused explainer of one part of the system.
 - [Memory model](docs/agents/memory-model.md) — T1/T2/T4/T5 context tiers, prompt cache strategy
 - [UI role surfaces](docs/agents/ui-role-surfaces.md) — what each role sees
 - [Skills context audit](docs/skills-context-audit.md) — per-skill T-tier matrix
+- [LangChain integration](docs/langchain.md) — where LangChain is used (chat RAG + one skill runtime) and why the split
 
 **Integrations**
 - [GitHub](docs/integrations/github.md) · [Slack](docs/integrations/slack.md) · [Linear](docs/integrations/linear.md) · [Sentry](docs/integrations/sentry.md)
@@ -111,6 +121,7 @@ The interesting reading. Each is a focused explainer of one part of the system.
 - [Workflow contracts](docs/workflows/workflow-contracts.md) — UI ↔ route ↔ skill ↔ audit wire contracts
 - [Implementation phases](docs/implementation/implementation-phases.md)
 - [DB restore runbook](docs/runbooks/db-restore.md)
+- [Testing](docs/testing.md) — Vitest layout + what's covered vs deferred to eval harness
 
 ---
 
@@ -122,6 +133,8 @@ The interesting reading. Each is a focused explainer of one part of the system.
 | Backend | Node 22 · Fastify · Prisma 6 · Anthropic SDK · Zod · Pino |
 | DB | Postgres 16 |
 | Agent | Claude Sonnet 4.6 with Haiku 4.5 fallback |
+| LangChain | Chat RAG (retriever + Xenova embeddings) + one skill runtime (LCEL + `withStructuredOutput` + LangSmith tracing, env-gated) |
+| Tests | Vitest (backend node + frontend happy-dom) — 134 unit tests, no infra |
 | Ops | Docker Compose · GitHub Actions |
 
 ---

@@ -1,0 +1,40 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Run backend + frontend Vitest suites on every push and PR. Both are
+# fast (< 5s locally), pure-logic only, so no Postgres / Anthropic
+# secrets are needed in CI.
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        package: [backend, frontend]
+    defaults:
+      run:
+        working-directory: ${{ matrix.package }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: ${{ matrix.package }}/package-lock.json
+
+      - name: install
+        run: npm ci
+
+      # Prisma client is required for backend TS to typecheck even in a
+      # test-only run because a few source files import Prisma types.
+      - name: prisma generate (backend only)
+        if: matrix.package == 'backend'
+        run: npx prisma generate
+
+      - name: test
+        run: npm test

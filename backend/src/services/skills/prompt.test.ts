@@ -165,7 +165,7 @@ function baseCtx(overrides: Partial<SkillContext['t1']> = {}): SkillContext {
   return {
     actor: 'test-actor',
     t1: {
-      identity: { hardConstraints: ['read-only advisor'] },
+      identity: { systemRole: 'sentinel', hardConstraints: ['read-only advisor'] },
       policyBundle: emptyBundle,
       roleConstraints: emptyRole,
       orgCatalog: emptyCatalog,
@@ -193,7 +193,7 @@ describe('buildSystemPrompt', () => {
   it('omits the cache marker entirely when no dynamic tiers are present', () => {
     const ctx: SkillContext = {
       actor: 'test',
-      t1: { identity: { hardConstraints: ['x'] } },
+      t1: { identity: { systemRole: 'sentinel', hardConstraints: ['x'] } },
       // No T2 / T4 / T5 → dynamic half is empty → no marker.
     }
     const out = buildSystemPrompt(ctx, { includeT5: false, includeT2: false, includeT4: false })

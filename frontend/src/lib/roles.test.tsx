@@ -69,22 +69,26 @@ describe('canAction — role-specific', () => {
     expect(result.current.canAction('deny')).toBe(true)
   })
 
-  it('access_approver can attach_notes', () => {
+  it('access_approver can approve + deny but cannot edit policy', () => {
     const { result } = renderHook(() => useRole(), {
       wrapper: wrapper('access_approver'),
     })
-    // Access approvers are approvers over access-request domain — they
-    // must be able to add notes to the record they're deciding on.
-    expect(result.current.canAction('attach_notes')).toBe(true)
+    // Access approvers own approve/deny inside their domain but stay
+    // out of policy config — that's Admin territory.
+    expect(result.current.canAction('approve')).toBe(true)
+    expect(result.current.canAction('deny')).toBe(true)
+    expect(result.current.canAction('edit_policy')).toBe(false)
   })
 
-  it('admin can override_policy — no one else can', () => {
+  it('admin can update_policy + manage_integrations — no one else can', () => {
     const admin = renderHook(() => useRole(), { wrapper: wrapper('admin') })
-    expect(admin.result.current.canAction('override_policy')).toBe(true)
+    expect(admin.result.current.canAction('update_policy')).toBe(true)
+    expect(admin.result.current.canAction('manage_integrations')).toBe(true)
 
     for (const r of ['operator', 'engineer', 'it_support', 'approver', 'access_approver'] as const) {
       const { result } = renderHook(() => useRole(), { wrapper: wrapper(r) })
-      expect(result.current.canAction('override_policy')).toBe(false)
+      expect(result.current.canAction('update_policy')).toBe(false)
+      expect(result.current.canAction('manage_integrations')).toBe(false)
     }
   })
 

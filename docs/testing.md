@@ -1,0 +1,68 @@
+# Testing
+
+Sentinel has two testing layers, deliberately.
+
+## Vitest — pure-logic unit tests
+
+Fast (< 5s), no I/O, no external services. Cover the helpers that show
+up all over the codebase — errors, prompt rendering, RBAC matrix,
+retry math, encryption round-trip, formatting helpers. If any of these
+drift, downstream behavior breaks silently, so they get pinned.
+
+**Run:**
+
+```bash
+# Backend
+cd backend && npm test
+cd backend && npm run test:watch   # dev mode
+
+# Frontend
+cd frontend && npm test
+cd frontend && npm run test:coverage
+```
+
+**Backend suites** (`backend/src/**/*.test.ts`):
+
+- [`lib/errors.test.ts`](../backend/src/lib/errors.test.ts) — every error class + PreconditionFailedError version fields
+- [`services/skills/reliability.test.ts`](../backend/src/services/skills/reliability.test.ts) — `isTransientError` matrix, `withRetry` w/ fake timers, breaker state transitions, token-bucket refill
+- [`services/skills/prompt.test.ts`](../backend/src/services/skills/prompt.test.ts) — `buildSystemPrompt` include/exclude, `splitOnCacheBreak` roundtrip, tier render order
+- [`services/skills/validate-references.test.ts`](../backend/src/services/skills/validate-references.test.ts) — `collectStrings`, service-name flagging, input-passthrough allow rule
+- [`services/agents/confidence.test.ts`](../backend/src/services/agents/confidence.test.ts) — `gateConfidence` per-skill overrides, null confidence handling
+- [`integrations/_base/encryption.test.ts`](../backend/src/integrations/_base/encryption.test.ts) — encrypt/decrypt roundtrip, GCM tamper detection, `maskCredential` boundaries
+
+**Frontend suites** (`frontend/src/**/*.test.{ts,tsx}`):
+
+- [`lib/utils.test.ts`](../frontend/src/lib/utils.test.ts) — `cn`, `formatDate`, `timeAgo` boundaries with `vi.setSystemTime`
+- [`lib/api.test.ts`](../frontend/src/lib/api.test.ts) — `apiFetch` with stubbed `fetch`, `ApiError.body`/`status`/`etag` extraction, 412 body preservation
+- [`lib/roles.test.tsx`](../frontend/src/lib/roles.test.tsx) — `canAction`/`canAccess` matrix per role, `getActionPermission` reason strings
+
+**Configs:**
+
+- Backend: [`backend/vitest.config.ts`](../backend/vitest.config.ts) — Node env, no globals, co-located test files
+- Frontend: [`frontend/vitest.config.ts`](../frontend/vitest.config.ts) — happy-dom env (jsdom v27 has a CJS/ESM incompat on Node 22), setup file registers `@testing-library/jest-dom/vitest` matchers
+
+## What Vitest deliberately does NOT cover
+
+Real backend paths that touch Prisma or the Anthropic SDK are covered
+by [`backend/eval/`](../backend/eval/) — a separate harness that runs
+real model calls against golden inputs, gated on `ANTHROPIC_API_KEY`.
+Unit tests are for logic that would fail without a network; eval is
+for logic that only fails with a network.
+
+That split keeps `npm test`:
+
+- Runnable with zero secrets or infra
+- Deterministic — no LLM output flakiness
+- Fast enough to run on every save
+
+The eval harness fills in what unit tests can't:
+
+- End-to-end skill runs with real model output
+- Structured-output regression per skill
+- A9 critique behavior
+- Prompt cache hit rate
+
+## CI
+
+[`.github/workflows/test.yml`](../.github/workflows/test.yml) runs both
+suites in a matrix on every push and PR. No secrets required.

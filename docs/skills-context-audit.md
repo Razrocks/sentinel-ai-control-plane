@@ -32,10 +32,11 @@ Tiers come from `services/agents/context.ts` (loader) and `services/skills/promp
 | `draft_approval_packet` | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `draft_work_note` | ✗ | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `draft_customer_response` | ✗ | ✓ | ✗ | ✓ | ✗ | ✓ |
-| `explain_policy_decision` | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ |
+| `explain_policy_decision` ⚙ | ✓ | ✓ | ✓ | ✓ | ✗ | ✗ |
 | `summarize_decision_impact` | ✗ | ✗ | ✗ | ✓ | ✗ | ✗ |
 
 ✱ Updated this audit — see "fixes" below.
+⚙ Runs through the LangChain runtime instead of the custom skill runner. See [langchain.md](langchain.md).
 
 ## Rationale per exclusion
 

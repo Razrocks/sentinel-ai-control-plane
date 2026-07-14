@@ -160,6 +160,10 @@ The T1 catalog is in every prompt, so the agent can answer the following *inline
 - "Walk me through the approval chain for chg-002" → `route_request`.
 - "Summarize the impact of approving appr-001" → `summarize_decision_impact`.
 
+**Tools available on the tool-use loop:**
+- `lookup_user`, `lookup_service`, `lookup_entity`, `lookup_policy_rule`, `lookup_audit_for_entity`, `lookup_recent_activity` — structured lookups against the DB.
+- `lookup_docs` — semantic search over Sentinel's own doc corpus (`docs/**/*.md` + `skills/**/skill.md`) via a LangChain `MemoryVectorStore` + local Xenova embeddings. Used when the user asks about the system itself (ontology, architecture, phase plan) rather than about a specific entity. See [langchain.md](../langchain.md).
+
 **Guardrails.**
 - **Read-only.** Cannot trigger any state-changing action through chat. If the user asks "approve change chg-001", the agent explains how to do it (path: Approvals page → approve button) but never invokes the action itself.
 - **Role-aware.** Responses respect the requesting user's role. An operator asking "how do I approve this" gets "your role can read but not approve — escalate to an approver via [link]," not approval mechanics.

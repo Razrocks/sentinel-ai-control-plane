@@ -45,14 +45,14 @@ function ctxWithServices(services: Record<string, unknown>): SkillContext {
   return {
     actor: 'test',
     t1: {
-      identity: { hardConstraints: [] },
+      identity: { systemRole: 'sentinel', hardConstraints: [] },
       orgCatalog: {
         users: [],
-        services: services as SkillContext['t1']['orgCatalog']['services'],
+        services,
         approverRegistry: {},
       },
     },
-  } as SkillContext
+  } as unknown as SkillContext
 }
 
 describe('validateReferences', () => {

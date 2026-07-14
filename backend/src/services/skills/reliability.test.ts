@@ -18,7 +18,7 @@ import {
 // both bad. These tests pin the invariants.
 
 describe('isTransientError', () => {
-  it.each([
+  const cases: Array<[unknown, boolean, string]> = [
     [{ status: 429 }, true, '429 rate-limit is transient'],
     [{ status: 500 }, true, '5xx is transient'],
     [{ status: 503 }, true, '5xx is transient'],
@@ -31,9 +31,12 @@ describe('isTransientError', () => {
     [null, false, 'null is safe'],
     [undefined, false, 'undefined is safe'],
     ['string error', false, 'non-object errors are not transient'],
-  ])('%o → %s (%s)', (input, expected) => {
-    expect(isTransientError(input)).toBe(expected)
-  })
+  ]
+  for (const [input, expected, label] of cases) {
+    it(`${label}: isTransientError → ${expected}`, () => {
+      expect(isTransientError(input)).toBe(expected)
+    })
+  }
 })
 
 describe('withRetry', () => {

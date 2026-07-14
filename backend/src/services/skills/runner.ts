@@ -153,6 +153,18 @@ export async function runSkill<TInput = unknown, TOutput = unknown>(
     throw new Error(`Unknown skill: ${name}`)
   }
   const spec = getSkill<TInput, TOutput>(name)
+
+  // Runtime dispatch. Skills flagged `runtime: 'langchain'` route through
+  // the LangChain runner (`langchain-runner.ts`). Everything else stays on
+  // this custom runtime — which is the source of truth for prompt
+  // caching, reliability wrappers, and A9 critique. The LangChain path
+  // reuses this file's `hashPrompt` + `writeProvenance` so admin metrics
+  // + audit rows look identical across runtimes.
+  if (spec.runtime === 'langchain') {
+    const { runSkillViaLangChain } = await import('./langchain-runner.js')
+    return runSkillViaLangChain<TInput, TOutput>(name, input, ctx, options)
+  }
+
   const actor = options.actor ?? ctx.actor ?? 'system'
 
   // Track the model actually used (may switch to fallback below).

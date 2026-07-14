@@ -284,6 +284,16 @@ export interface SkillSpec<TInput = unknown, TOutput = unknown> {
    * production-affecting human decision.
    */
   critique?: CritiqueConfig
+  /**
+   * Which runtime to execute this skill through. Defaults to `'custom'`
+   * (the built-in runner in `runner.ts` with prompt-cache split,
+   * reliability wrappers, and A9 critique). Set to `'langchain'` to
+   * route through the LangChain runtime (`langchain-runner.ts`) — used
+   * for one reference skill to demonstrate LCEL composition +
+   * `withStructuredOutput` + LangSmith tracing while keeping the custom
+   * runner as the default for the rest of the registry.
+   */
+  runtime?: 'custom' | 'langchain'
 }
 
 // ─── A9 self-critique ───────────────────────────────────

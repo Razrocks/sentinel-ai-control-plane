@@ -577,6 +577,13 @@ const explain_policy_decision: SkillSpec<
   inputSchema: S.ExplainPolicyDecisionInput,
   outputSchema: S.ExplainPolicyDecisionOutput,
   auditAction: 'policy_decision_explained',
+  // Routes through the LangChain runtime instead of the custom skill runner.
+  // Chosen as the reference LangChain skill because it's low-stakes
+  // (advisory prose, no persistence side-effects) and its Zod output schema
+  // maps cleanly onto `ChatAnthropic.withStructuredOutput()`. All other
+  // skills stay on the custom runner where prompt-cache splits + A9
+  // critique + reliability wrappers remain the source of truth.
+  runtime: 'langchain',
   purpose:
     'Render a human-readable explanation of a deterministic policy outcome. Does not decide policy; ' +
     'explains the verdict so the user can understand why and what would unblock.',

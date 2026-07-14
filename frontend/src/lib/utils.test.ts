@@ -38,7 +38,9 @@ describe('formatDate', () => {
   })
 
   it('accepts a Date object', () => {
-    const out = formatDate(new Date('2026-06-01T00:00:00Z'))
+    // Mid-day UTC so local-tz rounding never crosses a day/month boundary
+    // regardless of where the test runs.
+    const out = formatDate(new Date('2026-06-15T12:00:00Z'))
     expect(out).toMatch(/Jun/)
     expect(out).toMatch(/2026/)
   })

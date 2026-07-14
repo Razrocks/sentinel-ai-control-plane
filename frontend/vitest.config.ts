@@ -24,19 +24,14 @@ export default defineConfig({
     },
   },
   test: {
-    environment: 'jsdom',
+    // happy-dom instead of jsdom — jsdom 27 pulls in a css-color dep
+    // that require()s an ESM file, which crashes vitest workers on
+    // Node 22. happy-dom is smaller + faster + ESM-clean and covers the
+    // DOM surface our tests actually touch.
+    environment: 'happy-dom',
     include: ['src/**/*.test.{ts,tsx}'],
     globals: false,
     setupFiles: ['./src/test/setup.ts'],
     reporters: ['default'],
-    // Fork pool trips over jsdom's CJS-requiring css-color dep on
-    // Node 22 + ESM. Switching to threads avoids the require(ESM) crash
-    // without needing to swap the whole environment.
-    pool: 'threads',
-    server: {
-      deps: {
-        inline: [/@asamuzakjp\/css-color/, /jsdom/],
-      },
-    },
   },
 })

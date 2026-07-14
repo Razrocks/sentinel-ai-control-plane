@@ -41,7 +41,7 @@ cd frontend && npm run test:coverage
 - Backend: [`backend/vitest.config.ts`](../backend/vitest.config.ts) — Node env, no globals, co-located test files
 - Frontend: [`frontend/vitest.config.ts`](../frontend/vitest.config.ts) — happy-dom env (jsdom v27 has a CJS/ESM incompat on Node 22), setup file registers `@testing-library/jest-dom/vitest` matchers
 
-## Two testing layers — split by concern, not by ambition
+## Two testing layers
 
 Sentinel splits testing into two complementary layers, each optimized
 for what it does best.

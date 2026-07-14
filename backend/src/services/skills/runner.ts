@@ -69,7 +69,9 @@ export function isSkillRunnerConfigured(): boolean {
 
 // ─── Helpers ────────────────────────────────────────────
 
-function hashPrompt(system: string, user: string): string {
+// Exported so the LangChain runtime path can hash the same joined prompt
+// and stay comparable in AgentInvocation.promptHash across runtimes.
+export function hashPrompt(system: string, user: string): string {
   return createHash('sha256').update(`${system}\n---\n${user}`).digest('hex')
 }
 
@@ -77,7 +79,7 @@ function hashPrompt(system: string, user: string): string {
  * Strip ```json fences and surrounding whitespace, returning the inner text.
  * Models sometimes emit fences despite explicit instructions.
  */
-function stripCodeFences(text: string): string {
+export function stripCodeFences(text: string): string {
   let trimmed = text.trim()
   // Strip leading ```json or ``` and trailing ```
   if (trimmed.startsWith('```')) {
@@ -89,7 +91,7 @@ function stripCodeFences(text: string): string {
   return trimmed
 }
 
-interface ProvenanceWriteInput {
+export interface ProvenanceWriteInput {
   skill: SkillName
   kind: 'agentic' | 'deterministic' | 'integration'
   model: string
@@ -104,7 +106,7 @@ interface ProvenanceWriteInput {
   actor: string
 }
 
-async function writeProvenance(input: ProvenanceWriteInput): Promise<string | undefined> {
+export async function writeProvenance(input: ProvenanceWriteInput): Promise<string | undefined> {
   try {
     const row = await prisma.agentInvocation.create({
       data: {

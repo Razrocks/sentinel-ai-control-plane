@@ -26,7 +26,7 @@ export interface ReferenceViolation {
  * Walk a parsed output object and collect all string values.
  * Used to find entity references in deeply nested structures.
  */
-function collectStrings(value: unknown, out: string[] = []): string[] {
+export function collectStrings(value: unknown, out: string[] = []): string[] {
   if (typeof value === 'string') {
     out.push(value)
   } else if (Array.isArray(value)) {

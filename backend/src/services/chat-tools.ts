@@ -19,6 +19,7 @@
  */
 
 import { prisma } from '../lib/prisma.js'
+import { searchDocs } from './rag/indexer.js'
 
 // ─── Tool definitions (sent to Claude) ──────────────────
 
@@ -116,6 +117,32 @@ export const CHAT_TOOLS = [
       required: ['actor'],
     },
   },
+  {
+    // RAG over Sentinel's own doc corpus (docs/**/*.md + skills/**/skill.md).
+    // Use when the user asks about the system itself — ontology,
+    // architecture, skill purpose, phase plan — instead of about a
+    // specific entity in the DB. Retrieval is by cosine similarity via
+    // local Xenova embeddings; results are grounded citations, not
+    // model-invented prose.
+    name: 'lookup_docs',
+    description:
+      'Search Sentinel\'s own design docs + skill specs by semantic similarity. Use when the user asks about the SYSTEM (ontology terms, agent architecture, skill purpose, workflow contracts, phase plan) rather than about a specific entity in the DB. Returns top-k passages with source path + snippet + score. Quote the source path when you use content. Returns empty array if the corpus has no match — say so, don\'t invent.',
+    input_schema: {
+      type: 'object' as const,
+      properties: {
+        query: {
+          type: 'string',
+          description:
+            'Natural-language question about Sentinel itself (e.g. "what is a CoApproval", "how does A9 self-critique work", "which skills receive T5 temporal context").',
+        },
+        k: {
+          type: 'number',
+          description: 'Number of results to return. Default 4, max 8.',
+        },
+      },
+      required: ['query'],
+    },
+  },
 ] as const
 
 // ─── Handler — execute a tool by name ───────────────────
@@ -142,6 +169,8 @@ export async function executeTool(name: string, input: Record<string, unknown>):
         )
       case 'lookup_recent_activity':
         return await handleLookupRecentActivity(input as { actor: string; limit?: number })
+      case 'lookup_docs':
+        return await handleLookupDocs(input as { query: string; k?: number })
       default:
         return { content: JSON.stringify({ error: `unknown tool: ${name}` }), isError: true }
     }
@@ -442,6 +471,33 @@ async function handleLookupRecentActivity(input: {
         result: e.result,
       })),
       count: events.length,
+    }),
+  }
+}
+
+/**
+ * Semantic search over the Sentinel doc corpus (via LangChain +
+ * MemoryVectorStore + Xenova embeddings — see `services/rag/indexer.ts`).
+ *
+ * Contract:
+ *   - Empty query → empty array + note. Never make the model chase
+ *     nothing.
+ *   - Bounded k (1–8, default 4) so chat context doesn't get flooded.
+ *   - Result shape matches the tool-description promise so Claude cites
+ *     the source path directly back to the user.
+ */
+async function handleLookupDocs(input: {
+  query: string
+  k?: number
+}): Promise<ToolCallResult> {
+  const q = (input.query || '').trim()
+  if (!q) return { content: JSON.stringify({ hits: [], note: 'empty query' }) }
+  const k = Math.min(8, Math.max(1, input.k ?? 4))
+  const hits = await searchDocs(q, k)
+  return {
+    content: JSON.stringify({
+      hits,
+      count: hits.length,
     }),
   }
 }

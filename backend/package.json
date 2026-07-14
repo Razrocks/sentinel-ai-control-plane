@@ -14,7 +14,10 @@
     "db:reset": "prisma migrate reset --force",
     "secret-scan": "node ../scripts/secret-scan.mjs",
     "precommit": "node ../scripts/secret-scan.mjs --staged",
-    "eval": "tsx eval/run.ts"
+    "eval": "tsx eval/run.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.88.0",

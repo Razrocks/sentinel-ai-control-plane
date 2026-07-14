@@ -147,6 +147,19 @@ app.get('/api/health', async () => {
 try {
   await app.listen({ port: config.port, host: config.host })
   app.log.info(`Sentinel backend running at http://${config.host}:${config.port}`)
+  // Warm the RAG doc retriever in the background so the first `lookup_docs`
+  // chat call doesn't pay the model-download + indexing cost. Fire-and-
+  // forget: any failure is logged inside the indexer and doesn't affect
+  // route serving — chat degrades gracefully to empty results.
+  void (async () => {
+    try {
+      const { getDocRetriever } = await import('./services/rag/indexer.js')
+      await getDocRetriever()
+      app.log.info('[rag] doc corpus warmed')
+    } catch (err) {
+      app.log.warn({ err }, '[rag] warm-up failed')
+    }
+  })()
 } catch (err) {
   app.log.error(err)
   process.exit(1)
